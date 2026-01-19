@@ -1,2 +1,4 @@
-# KUSERview
-Plain and simple KUSER_SHARED_DATA viewer
+# KUSER_SHARED_DATA Viewer
+*plain and simple KUSER_SHARED_DATA structure viewer*
+
+
