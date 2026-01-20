@@ -9,9 +9,9 @@
 	internalname		= KUSERview
 
 	major = 0
-	minor = 1
+	minor = 2
 	patch = 0
-	build = 300
+	build = 356
 
 [versioninfo]
 	filename	= %dir%\%internalname%-vi.rc
@@ -30,7 +30,7 @@
 	FileVersion	= %major%.%minor%.%patch%.%build%
 	FileDescription	= %filedescription%
 	ProductName	= %product%
-	ProductVersion	= %major%.%minor%.%patch%
+	ProductVersion	= %major%.%minor%
 
 [versioninfo:ff]
 	debug		= %debug%

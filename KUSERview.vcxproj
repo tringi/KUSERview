@@ -349,6 +349,7 @@
     <ResourceCompile Include="KUSERview.rc" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="KUSERview.info" />
     <None Include="Lib\msvcrt.def" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

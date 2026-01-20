@@ -42,6 +42,7 @@ enum Type : UCHAR {
 };
 enum Decode : UCHAR {
     NoDecode,
+    BoolDecode,
     U8Decode,
     U16Decode,
     U32Decode,
@@ -49,6 +50,11 @@ enum Decode : UCHAR {
     StringDecode,
     SystemTime,
     TickMultiplier,
+    NtProductType,
+    NativeProcArch,
+    AltArch,
+    ImageNumber,
+    SuiteMask,
 };
 
 static const struct {
@@ -63,10 +69,11 @@ static const struct {
 } structure [] = {
     { 0x0000,   4, U32Type,      U32Decode, {  3,5 }, { 5,1 }, "TickCountLow" },
     { 0x0004,   4, U32Type, TickMultiplier, {  3,5 }, { 0,0 }, "TickCountMultiplier" },
-    { 0x0008,  12, U32Type,      U64Decode, {  3,5 }, { 0,0 }, "InterruptTime" },
+    { 0x0008,  12, U32Type,      U64Decode, {  3,5 }, { 5,2 }, "InterruptTime" },
+    { 0x0008,  12, U32Type,     SystemTime, {  6,0 }, { 0,0 }, "InterruptTime" },
     { 0x0014,  12, U32Type,     SystemTime, {  3,5 }, { 0,0 }, "SystemTime" },
     { 0x0020,  12, U32Type,     SystemTime, {  3,5 }, { 0,0 }, "TimeZoneBias" },
-    { 0x002C,   4, U16Type,       NoDecode, {  3,5 }, { 0,0 }, "ImageNumber" },
+    { 0x002C,   4, U16Type,    ImageNumber, {  3,5 }, { 0,0 }, "ImageNumber" },
     { 0x0030, 260,  NoType,   StringDecode, {  3,5 }, { 0,0 }, "NtSystemRoot" },
     { 0x0238,   4, U32Type,       NoDecode, {  4,0 }, { 4,0 }, "DosDeviceMap" }, // each bit is DOS disk letter
     { 0x0238,   4, U32Type,      U32Decode, {  5,0 }, { 0,0 }, "MaxStackTraceDepth" },
@@ -80,21 +87,21 @@ static const struct {
     { 0x0258,   4, U32Type,      U32Decode, {  6,2 }, { 0,0 }, "GlobalValidationRunLevel" },
     { 0x025C,   4, U32Type,      U32Decode, {  6,2 }, { 0,0 }, "TimeZoneBiasStamp" },
     { 0x0260,   4, U32Type,      U32Decode, { 10,0 }, { 0,0 }, "NtBuildNumber" },
-    { 0x0264,   4, U32Type,      U32Decode, {  4,0 }, { 0,0 }, "NtProductType" }, // TODO: decode: https://www.vergiliusproject.com/kernels/x64/server-2022/21h2/_NT_PRODUCT_TYPE
-    { 0x0268,   1,  NoType,       NoDecode, {  4,0 }, { 0,0 }, "ProductTypeIsValid" }, // true/false
-    { 0x026A,   2, U16Type,       NoDecode, {  6,2 }, { 0,0 }, "NativeProcessorArchitecture" }, // TODO: decode to string
+    { 0x0264,   4, U32Type,  NtProductType, {  4,0 }, { 0,0 }, "NtProductType" },
+    { 0x0268,   1,  NoType,     BoolDecode, {  4,0 }, { 0,0 }, "ProductTypeIsValid" },
+    { 0x026A,   2, U16Type, NativeProcArch, {  6,2 }, { 0,0 }, "NativeProcessorArchitecture" },
     { 0x026C,   4, U32Type,      U32Decode, {  4,0 }, { 0,0 }, "NtMajorVersion" },
     { 0x0270,   4, U32Type,      U32Decode, {  4,0 }, { 0,0 }, "NtMinorVersion" },
     { 0x0274,  64,  NoType,       NoDecode, {  4,0 }, { 0,0 }, "ProcessorFeatures" }, // TODO: List of features
     { 0x02B4,   4, U32Type,       NoDecode, {  4,0 }, { 0,0 }, "MmHighestUserAddress" },
     { 0x02B8,   4, U32Type,       NoDecode, {  4,0 }, { 0,0 }, "MmSystemRangeStart" },
     { 0x02BC,   4, U32Type,      U32Decode, {  5,0 }, { 0,0 }, "TimeSlip" },
-    { 0x02C0,   4, U32Type,      U32Decode, {  5,0 }, { 0,0 }, "AlternativeArchitecture" }, // ALTERNATIVE_ARCHITECTURE_TYPE https://www.vergiliusproject.com/kernels/x64/server-2022/21h2/_ALTERNATIVE_ARCHITECTURE_TYPE
+    { 0x02C0,   4, U32Type,        AltArch, {  5,0 }, { 0,0 }, "AlternativeArchitecture" },
     { 0x02C4,   4, U32Type,      U32Decode, { 10,0 }, { 0,0 }, "BootId" },
     { 0x02C8,   8, U64Type,     SystemTime, {  5,0 }, { 0,0 }, "SystemExpirationDate" },
-    { 0x02D0,   4, U32Type,       NoDecode, {  4,0 }, { 0,0 }, "SuiteMask" }, // TODO: decode to strings
-    { 0x02D4,   1,  NoType,       NoDecode, {  5,0 }, { 0,0 }, "KdDebuggerEnabled" }, // true/false
-    { 0x02D5,   1,  NoType,       NoDecode, {  5,1 }, { 0,0 }, "MitigationPolicies" },
+    { 0x02D0,   4, U32Type,      SuiteMask, {  4,0 }, { 0,0 }, "SuiteMask" },
+    { 0x02D4,   1,  NoType,     BoolDecode, {  5,0 }, { 0,0 }, "KdDebuggerEnabled" },
+    { 0x02D5,   1,  NoType,       NoDecode, {  5,1 }, { 0,0 }, "MitigationPolicies" }, // TODO: decode bits
     { 0x02D6,   2, U16Type,      U16Decode, { 10,7 }, { 0,0 }, "CyclesPerYield" },
     { 0x02D8,   4, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "ActiveConsoleId" },
     { 0x02DC,   4, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "DismountCount" },
@@ -211,6 +218,13 @@ bool InitVersionInfoStrings (HINSTANCE hInstance) {
     return false;
 }
 
+void AppendTmp (const wchar_t * string) {
+    if (szTmpBuffer [0]) {
+        wcscat (szTmpBuffer, L", ");
+    }
+    wcscat (szTmpBuffer, string);
+}
+
 LRESULT ListViewCtrl_SetItemText (HWND hWnd, int idCtrl, LV_ITEM & item, int column) {
     item.iSubItem = column;
     item.cchTextMax = 32768;
@@ -228,7 +242,7 @@ HFONT hFixedFont = NULL;
 LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM wParam, _In_ LPARAM lParam) {
     switch (message) {
         case WM_CREATE:
-            if (auto cs = reinterpret_cast <const CREATESTRUCT *> (lParam)) {
+            if (auto cs = reinterpret_cast <CREATESTRUCT *> (lParam)) {
 
                 auto style = WS_VISIBLE | WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_VSCROLL | WS_HSCROLL
                            | LVS_REPORT | LVS_SHAREIMAGELISTS | LVS_NOSORTHEADER;
@@ -273,7 +287,7 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                             LVITEMA itemA;
                             itemA.iSubItem = 1;
                             itemA.pszText = const_cast <char *> (element.name);
-                            SendMessageA (h, LVM_SETITEMTEXTA, index, (LPARAM) &itemA);
+                            SendMessage (h, LVM_SETITEMTEXTA, index, (LPARAM) &itemA);
 
                             if (element.maxver.byte == element.minver.byte) {
                                 _snwprintf (szTmpBuffer, 32768, L"%u.%u only", // TODO: rsrc
@@ -298,11 +312,19 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                     ListView_SetColumnWidth (h, 1, LVSCW_AUTOSIZE);
                     ListView_SetColumnWidth (h, 2, LVSCW_AUTOSIZE);
                     ListView_SetColumnWidth (h, 3, LVSCW_AUTOSIZE);
-                    ListView_SetColumnWidth (h, 4, LVSCW_AUTOSIZE);
+                    if (ListView_SetColumnWidth (h, 4, LVSCW_AUTOSIZE)) {
+                        ListView_SetColumnWidth (h, 4, 5 * ListView_GetColumnWidth (h, 4) / 4); // because of different font?
+                    }
                     ListView_SetColumnWidth (h, 5, LVSCW_AUTOSIZE);
 
                     SetTimer (hWnd, 1, 40, NULL);
                     SetFocus (h);
+
+                    RECT r;
+                    if (GetWindowRect (hWnd, &r)) {
+                        MoveWindow (hWnd, r.left, r.top, 3 * (r.right - r.left) / 4, r.bottom - r.top, TRUE);
+                    }
+                    
                 } else
                     return -1;
             }
@@ -373,6 +395,17 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
 
                             szTmpBuffer [0] = L'\0';
                             switch (element.decode) {
+                                case BoolDecode: {
+                                    bool result = false;
+                                    for (auto i = 0u; i != element.length; ++i) {
+                                        if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [i] != 0) {
+                                            result = true;
+                                            break;
+                                        }
+                                    }
+                                    _snwprintf (szTmpBuffer, 32768, result ? L"True" : L"False");
+                                } break;
+                                
                                 case U8Decode:
                                     _snwprintf (szTmpBuffer, 32768, L"%u", *reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset));
                                     break;
@@ -389,8 +422,8 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                     _snwprintf (szTmpBuffer, 32768, L"%s", reinterpret_cast <const wchar_t *> (0x7FFE0000u + element.offset));
                                     break;
                                 case TickMultiplier: {
-                                    auto x =  (*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) * 1000uLL) >> 0x18;
-                                    _snwprintf (szTmpBuffer, 32768, L"%llu.%llu", x / 1000, x % 1000);
+                                    auto x = (unsigned int) ((*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) * 1000uLL) >> 0x18);
+                                    _snwprintf (szTmpBuffer, 32768, L"%u.%u", x / 1000, x % 1000);
                                 } break;
 
                                 case SystemTime:
@@ -415,12 +448,99 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                             auto h = value % 24;
                                             value /= 24;
 
-                                            _snwprintf (szTmpBuffer, 32768, L"%c %lldd %02llu:%02llu:%02llu.%03llu",
-                                                        negative ? L'–' : L'+',
-                                                        value, h, m, s, ms);
+                                            if (value) {
+                                                _snwprintf (szTmpBuffer, 32768, L"%c %lldd %02llu:%02llu:%02llu.%03llu",
+                                                            negative ? L'–' : L'+',
+                                                            value, h, m, s, ms);
+                                            } else {
+                                                _snwprintf (szTmpBuffer, 32768, L"%c %02llu:%02llu:%02llu.%03llu",
+                                                            negative ? L'–' : L'+',
+                                                            h, m, s, ms);
+                                            }
                                         }
                                     } else {
                                         _snwprintf (szTmpBuffer, 32768, L"0");
+                                    }
+                                    break;
+
+                                case NtProductType:
+                                    switch (auto value = *reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset)) {
+                                        case 1: _snwprintf (szTmpBuffer, 32768, L"Workstation"); break;
+                                        case 2: _snwprintf (szTmpBuffer, 32768, L"Domain Controller"); break;
+                                        case 3: _snwprintf (szTmpBuffer, 32768, L"Server"); break;
+
+                                        default:
+                                            _snwprintf (szTmpBuffer, 32768, L"Unknown");
+                                    }
+                                    break;
+
+                                case NativeProcArch:
+                                    switch (auto value = *reinterpret_cast <const std::uint16_t *> (0x7FFE0000u + element.offset)) {
+                                        case PROCESSOR_ARCHITECTURE_INTEL: _snwprintf (szTmpBuffer, 32768, L"x86-32"); break;
+                                        case PROCESSOR_ARCHITECTURE_ARM:   _snwprintf (szTmpBuffer, 32768, L"ARM32"); break;
+                                        case PROCESSOR_ARCHITECTURE_IA64:  _snwprintf (szTmpBuffer, 32768, L"Itanium"); break;
+                                        case PROCESSOR_ARCHITECTURE_MSIL:  _snwprintf (szTmpBuffer, 32768, L"MSIL"); break;
+                                        case PROCESSOR_ARCHITECTURE_AMD64: _snwprintf (szTmpBuffer, 32768, L"AMD64/x86-64"); break;
+                                        case PROCESSOR_ARCHITECTURE_ARM64:  _snwprintf (szTmpBuffer, 32768, L"ARM64"); break;
+
+                                        default:
+                                            _snwprintf (szTmpBuffer, 32768, L"Unknown");
+                                    }
+                                    break;
+
+                                case AltArch:
+                                    switch (auto value = *reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset)) {
+                                        case 0: _snwprintf (szTmpBuffer, 32768, L""); break;
+                                        case 1: _snwprintf (szTmpBuffer, 32768, L"NEC98x86"); break;
+
+                                        default:
+                                            _snwprintf (szTmpBuffer, 32768, L"Unknown");
+                                    }
+                                    break;
+
+                                case ImageNumber: {
+                                    auto p = reinterpret_cast <const std::uint16_t *> (0x7FFE0000u + element.offset);
+                                    for (auto i = 0u; i != element.length / 2; ++i) {
+                                        if (i) {
+                                            if (p [i] != p [i - 1]) {
+                                                wcscat (szTmpBuffer, L", ");
+                                            } else
+                                                continue;
+                                        }
+
+                                        switch (p [i]) {
+                                            case IMAGE_FILE_MACHINE_I386: _snwprintf (szTmpBuffer2, 32768, L"i386/x86-32"); break;
+                                            case IMAGE_FILE_MACHINE_ARMNT: _snwprintf (szTmpBuffer2, 32768, L"ARM32 Thumb-2"); break;
+                                            case IMAGE_FILE_MACHINE_IA64: _snwprintf (szTmpBuffer2, 32768, L"IA64/Itanium"); break;
+                                            case IMAGE_FILE_MACHINE_AMD64: _snwprintf (szTmpBuffer2, 32768, L"AMD64/x86-64"); break;
+                                            case IMAGE_FILE_MACHINE_ARM64: _snwprintf (szTmpBuffer2, 32768, L"ARM64"); break;
+
+                                            default:
+                                                _snwprintf (szTmpBuffer2, 32768, L"Unknown");
+                                        }
+                                        wcscat (szTmpBuffer, szTmpBuffer2);
+                                    }
+                                } break;
+
+                                case SuiteMask:
+                                    if (auto value = *reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset)) {
+                                        if (value & VER_SUITE_SMALLBUSINESS) AppendTmp (L"SBS");
+                                        if (value & VER_SUITE_ENTERPRISE) AppendTmp (L"Enterprise");
+                                        if (value & VER_SUITE_BACKOFFICE) AppendTmp (L"Back Office");
+                                        if (value & VER_SUITE_COMMUNICATIONS) AppendTmp (L"Communications");
+                                        if (value & VER_SUITE_TERMINAL) AppendTmp (L"Terminal Services");
+                                        if (value & VER_SUITE_SMALLBUSINESS_RESTRICTED) AppendTmp (L"SBS Restricted");
+                                        if (value & VER_SUITE_EMBEDDEDNT) AppendTmp (L"Embedded");
+                                        if (value & VER_SUITE_DATACENTER) AppendTmp (L"DC");
+                                        if (value & VER_SUITE_SINGLEUSERTS) AppendTmp (L"Single User");
+                                        if (value & VER_SUITE_PERSONAL) AppendTmp (L"Home");
+                                        if (value & VER_SUITE_BLADE) AppendTmp (L"Web Edition");
+                                        if (value & VER_SUITE_EMBEDDED_RESTRICTED) AppendTmp (L"Embedded Restricted");
+                                        if (value & VER_SUITE_SECURITY_APPLIANCE) AppendTmp (L"Security Appliance");
+                                        if (value & VER_SUITE_STORAGE_SERVER) AppendTmp (L"Storage Server");
+                                        if (value & VER_SUITE_COMPUTE_SERVER) AppendTmp (L"Compute Cluster Edition");
+                                        if (value & VER_SUITE_WH_SERVER) AppendTmp (L"Home Server");
+                                        if (value & VER_SUITE_MULTIUSERTS) AppendTmp (L"Multi User");
                                     }
                                     break;
                             }
