@@ -279,8 +279,10 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                     LVCOLUMN column {};
                     column.mask = LVCF_FMT | LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM;
                     column.pszText = szTmpBuffer;
+                    szTmpBuffer [0] = L'\0';
+                    ListView_InsertColumn (h, column.iSubItem++, &column);
 
-                    while (LoadString (NULL, column.iSubItem + 1, szTmpBuffer, 32768)) {
+                    while (LoadString (NULL, column.iSubItem, szTmpBuffer, 32768)) {
                         column.cx = 128;
                         ListView_InsertColumn (h, column.iSubItem++, &column);
                     }
@@ -288,17 +290,21 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                     LVITEM item {};
                     item.mask = LVIF_TEXT;
                     item.iItem = 0x7FFF'FFFF;
-                    item.pszText = szTmpBuffer;
+                    item.pszText = NULL;
 
                     for (const auto & element : structure) {
-                        _snwprintf (szTmpBuffer, 32768, L"0x7FFE%04X", element.offset);
                         auto index = ListView_InsertItem (h, &item);
                         if (index != -1) {
                             
                             LVITEMA itemA;
-                            itemA.iSubItem = 1;
                             itemA.pszText = const_cast <char *> (element.name);
+                            itemA.iSubItem = 0;
                             SendMessage (h, LVM_SETITEMTEXTA, index, (LPARAM) &itemA);
+                            itemA.iSubItem = 2;
+                            SendMessage (h, LVM_SETITEMTEXTA, index, (LPARAM) &itemA);
+
+                            _snwprintf (szTmpBuffer, 32768, L"0x7FFE%04X", element.offset);
+                            ListView_SetItemText (h, index, 1, szTmpBuffer);
 
                             if (element.maxver.byte == element.minver.byte) {
                                 _snwprintf (szTmpBuffer, 32768, L"%u.%u only", // TODO: rsrc
@@ -313,23 +319,23 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                             element.minver.major, element.minver.minor);
                             }
                             
-                            ListView_SetItemText (h, index, 2, szTmpBuffer);
+                            ListView_SetItemText (h, index, 3, szTmpBuffer);
                         }
                     }
 
                     WindowProcedure (hWnd, WM_TIMER, 0, 0);
 
-                    ListView_SetColumnWidth (h, 0, LVSCW_AUTOSIZE);
                     ListView_SetColumnWidth (h, 1, LVSCW_AUTOSIZE);
                     ListView_SetColumnWidth (h, 2, LVSCW_AUTOSIZE);
                     ListView_SetColumnWidth (h, 3, LVSCW_AUTOSIZE);
-                    if (ListView_SetColumnWidth (h, 4, LVSCW_AUTOSIZE)) {
-                        ListView_SetColumnWidth (h, 4, 5 * ListView_GetColumnWidth (h, 4) / 4); // because of different font?
+                    ListView_SetColumnWidth (h, 4, LVSCW_AUTOSIZE);
+                    if (ListView_SetColumnWidth (h, 5, LVSCW_AUTOSIZE)) {
+                        ListView_SetColumnWidth (h, 5, 5 * ListView_GetColumnWidth (h, 5) / 4); // because of different font?
                     }
 
                     WindowProcedure (hWnd, WM_TIMER, 1, 0);
 
-                    ListView_SetColumnWidth (h, 5, LVSCW_AUTOSIZE);
+                    ListView_SetColumnWidth (h, 6, LVSCW_AUTOSIZE);
 
                     SetTimer (hWnd, 2, 40, NULL);
                     SetFocus (h);
@@ -387,7 +393,7 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                 _snwprintf (szTmpBuffer + 3 * i, 4, L"%02X ", reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [i]);
                             }
 
-                            ListViewCtrl_SetItemText (hWnd, 1, item, 3);
+                            ListViewCtrl_SetItemText (hWnd, 1, item, 4);
 
                             szTmpBuffer [0] = L'\0';
                             switch (element.type) {
@@ -413,7 +419,7 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                     break;
                             }
 
-                            ListViewCtrl_SetItemText (hWnd, 1, item, 4);
+                            ListViewCtrl_SetItemText (hWnd, 1, item, 5);
 
                             szTmpBuffer [0] = L'\0';
                             switch (element.decode) {
@@ -708,7 +714,7 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                     break;
                             }
 
-                            ListViewCtrl_SetItemText (hWnd, 1, item, 5);
+                            ListViewCtrl_SetItemText (hWnd, 1, item, 6);
                         }
                         ++item.iItem;
                     }
@@ -739,11 +745,11 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
 
                         case CDDS_SUBITEM | CDDS_ITEMPREPAINT:
                             static HGDIOBJ hPrevFont = NULL;
-                            if (lplvcd->iSubItem == 3) {
+                            if (lplvcd->iSubItem == 4) {
                                 hPrevFont = SelectObject (lplvcd->nmcd.hdc, hFixedFont);
                                 return CDRF_NEWFONT;
                             }
-                            if (lplvcd->iSubItem == 5) {
+                            if (lplvcd->iSubItem == 6) {
                                 SelectObject (lplvcd->nmcd.hdc, hPrevFont);
                                 return CDRF_NEWFONT;
                             }
