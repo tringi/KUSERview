@@ -59,6 +59,10 @@ enum Decode : UCHAR {
     ProcFeatures,
     SharedDataFlags,
     TimeZoneId,
+    KdDebugDecode,
+    SysCallDecode,
+    EnclaveDecode,
+    VirtFlagDecode,
 };
 
 static const struct Element {
@@ -105,7 +109,7 @@ static const struct Element {
     { 0x02C4,   4, false, U32Type,      U32Decode, { 10,0 }, { 0,0 }, "BootId" },
     { 0x02C8,   8, false, U64Type,     SystemTime, {  5,0 }, { 0,0 }, "SystemExpirationDate" },
     { 0x02D0,   4, false, U32Type,      SuiteMask, {  4,0 }, { 0,0 }, "SuiteMask" },
-    { 0x02D4,   1,  true,  NoType,     BoolDecode, {  5,0 }, { 0,0 }, "KdDebuggerEnabled" }, // TODO: bit 0 enabled, bit 1 connected
+    { 0x02D4,   1,  true,  NoType,  KdDebugDecode, {  5,0 }, { 0,0 }, "KdDebuggerEnabled" },
     { 0x02D5,   1, false,  NoType,  MitigationPol, {  5,1 }, { 0,0 }, "MitigationPolicies" },
     { 0x02D6,   2, false, U16Type,      U16Decode, { 10,7 }, { 0,0 }, "CyclesPerYield" },
     { 0x02D8,   4,  true, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "ActiveConsoleId" }, // TODO: can be -1 for Windows Sandbox
@@ -113,16 +117,16 @@ static const struct Element {
     { 0x02E0,   4,  true, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "ComPlusPackage" },
     { 0x02E4,   4,  true, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "LastSystemRITEventTickCount" }, // updates every second as long as some users provide input
     { 0x02E8,   4,  true, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "NumberOfPhysicalPages" },
-    { 0x02EC,   1, false,  NoType,       NoDecode, {  5,1 }, { 0,0 }, "SafeBootMode" },
+    { 0x02EC,   1, false,  NoType,     BoolDecode, {  5,1 }, { 0,0 }, "SafeBootMode" },
     { 0x02ED,   1,  true,  NoType,       NoDecode, {  6,1 }, { 6,1 }, "TscQpcData" },
-    { 0x02ED,   1, false,  NoType,       NoDecode, { 10,2 }, { 0,0 }, "VirtualizationFlags" }, // bit 0: vmx/svm enableable, bit 1: locked // Bits are 0 when: Hyper-V is running (regardless of partition); or VMX is off (in bios, or VM VBS-compatibility off). Bits form mask 3 or 1 when: Hyper-V is NOT running, and VMX is on (in bios, or VM VBS-compatibility ON).
+    { 0x02ED,   1, false,  NoType, VirtFlagDecode, { 10,2 }, { 0,0 }, "VirtualizationFlags" },
     { 0x02F0,   4, false, U32Type,       NoDecode, {  5,1 }, { 5,2 }, "TraceLogging" },
     { 0x02F0,   4,  true, U32Type,SharedDataFlags, {  6,0 }, { 0,0 }, "SharedDataFlags" },
     { 0x02F8,   8, false, U64Type,       NoDecode, {  5,1 }, { 0,0 }, "TestRetInstruction" },
     { 0x0300,   4, false, U32Type,       NoDecode, {  5,1 }, { 6,1 }, "SystemCall" },
     { 0x0304,   4, false, U32Type,       NoDecode, {  5,1 }, { 6,1 }, "SystemCallReturn" },
     { 0x0300,   8, false, U64Type,      U64Decode, {  6,2 }, { 0,0 }, "QpcFrequency" },
-    { 0x0308,   4, false, U32Type,       NoDecode, { 10,1 }, { 0,0 }, "SystemCall" }, // 0 - INT 2E, 1 - SYSCALL preferred, 
+    { 0x0308,   4, false, U32Type,  SysCallDecode, { 10,1 }, { 0,0 }, "SystemCall" },
     { 0x030C,   4, false, U32Type,       NoDecode, { 10,9 }, { 0,0 }, "UserCetAvailableEnvironments" },
     { 0x0310,   8,  true, U64Type,      U64Decode, { 11,3 }, { 0,0 }, "FullNumberOfPhysicalPages" }, 
     { 0x0320,   8,  true, U64Type,      U64Decode, {  5,1 }, { 0,0 }, "TickCount" },
@@ -140,7 +144,7 @@ static const struct Element {
     { 0x0369,   1,  true,  U8Type,       U8Decode, { 10,0 }, { 0,0 }, "QpcInterruptTimeIncrementShift" },
     { 0x036A,   2,  true, U16Type,      U16Decode, { 10,0 }, { 0,0 }, "UnparkedProcessorCount" },
     { 0x036C,   4,  true, U32Type,      U32Decode, {  6,2 }, { 6,3 }, "QpcInterruptTimeIncrement32" },
-    { 0x036C,  16, false, U32Type,       NoDecode, { 10,1 }, { 0,0 }, "EnclaveFeatureMask" }, // TODO: decode bits, bit1/bit2: SGX1/SGX2 leaf funcs enabled (and locked in that state), bit8: 1 if LoaderBlock->Extension.IumEnabled (can be 1 in root and non - root partitions; 0 if Hyper - V is off)
+    { 0x036C,  16, false, U32Type,  EnclaveDecode, { 10,1 }, { 0,0 }, "EnclaveFeatureMask" },
     { 0x0370,   1,  true,  U8Type,       U8Decode, {  6,2 }, { 6,3 }, "QpcSystemTimeIncrementShift" },
     { 0x0371,   1,  true,  U8Type,       U8Decode, {  6,2 }, { 6,3 }, "QpcInterruptTimeIncrementShift" },
     { 0x037C,   4,  true, U32Type,      U32Decode, { 10,4 }, { 0,0 }, "TelemetryCoverageRound" },
@@ -166,8 +170,8 @@ static const struct Element {
     { 0x03D0,   8,  true, U64Type,     SystemTime, {  6,2 }, { 0,0 }, "TimeZoneBiasEffectiveEnd" },
     { 0x03E0, 528,  true, U32Type,       NoDecode, {  6,1 }, { 6,1 }, "XState" },
     { 0x03D8, 840,  true, U32Type,       NoDecode, {  6,2 }, { 0,0 }, "XState" },
-    { 0x0710,  12, false,  U8Type,       NoDecode, { 10,0 }, {10,15}, "FeatureConfigurationChangeStamp" },
-    { 0x0720,  12, false,  U8Type,       NoDecode, { 11,0 }, { 0,0 }, "FeatureConfigurationChangeStamp" },
+    { 0x0710,  16, false,  U8Type,       NoDecode, { 10,0 }, {10,15}, "FeatureConfigurationChangeStamp" },
+    { 0x0720,  16, false,  U8Type,       NoDecode, { 11,0 }, { 0,0 }, "FeatureConfigurationChangeStamp" },
     { 0x0730,   8, false, U64Type,       NoDecode, { 11,0 }, { 0,0 }, "UserPointerAuthMask" },
     //{ 0x0738,   8, false, U64Type,       NoDecode, { 11,0 }, { 0,0 }, "XStateArm64" },
 };
@@ -675,6 +679,33 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                     if (*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) & 0x0000'0800) AppendTmp (L"Split Token");
                                     if (*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) & 0x0000'1000) AppendTmp (L"Shadow Admin");
                                     break;
+
+                                case KdDebugDecode:
+                                    if (*reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) & 0x01) AppendTmp (L"Enabled"); else AppendTmp (L"Disabled");
+                                    if (*reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) & 0x02) AppendTmp (L"Connected"); else AppendTmp (L"Disconnected");
+                                    break;
+
+                                case SysCallDecode:
+                                    switch (auto value = *reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset)) {
+                                        case 0: _snwprintf (szTmpBuffer, 32768, L"INT 2E"); break;
+                                        case 1: _snwprintf (szTmpBuffer, 32768, L"SYSCALL preferred"); break;
+
+                                        default:
+                                            _snwprintf (szTmpBuffer, 32768, L"Unknown");
+                                    }
+                                    break;
+
+                                case EnclaveDecode:
+                                    if (reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) [0] & 0x0000'0001) AppendTmp (L"SGX1");
+                                    if (reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) [0] & 0x0000'0002) AppendTmp (L"SGX2");
+                                    // IUM - Isolated User Mode
+                                    if (reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) [0] & 0x0000'0100) AppendTmp (L"VBS/IUM"); else AppendTmp (L"VBS/IUM/Hyper-V disabled");
+                                    break;
+
+                                case VirtFlagDecode:
+                                    if (*reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) & 0x01) AppendTmp (L"VMX/SVM Available");
+                                    if (*reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) & 0x02) AppendTmp (L"Locked");
+                                    break;
                             }
 
                             ListViewCtrl_SetItemText (hWnd, 1, item, 5);
@@ -687,6 +718,7 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
             break;
 
         case WM_NOTIFY:
+            // TODO: Ctrl+A and Ctrl+C of selected
             switch (((LPNMHDR) lParam)->code) {
                 case NM_CUSTOMDRAW:
                     LPNMLVCUSTOMDRAW  lplvcd = (LPNMLVCUSTOMDRAW) lParam;
