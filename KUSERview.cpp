@@ -693,8 +693,8 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
 
                                 case SysCallDecode:
                                     switch (auto value = *reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset)) {
-                                        case 0: _snwprintf (szTmpBuffer, 32768, L"INT 2E"); break;
-                                        case 1: _snwprintf (szTmpBuffer, 32768, L"SYSCALL preferred"); break;
+                                        case 0: _snwprintf (szTmpBuffer, 32768, L"SYSCALL"); break;
+                                        case 1: _snwprintf (szTmpBuffer, 32768, L"INT 2E"); break;
 
                                         default:
                                             _snwprintf (szTmpBuffer, 32768, L"Unknown");
