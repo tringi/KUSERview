@@ -236,12 +236,35 @@ void AppendTmp (const wchar_t * string) {
     wcscat (szTmpBuffer, string);
 }
 
-LRESULT ListViewCtrl_SetItemText (HWND hWnd, int idCtrl, LV_ITEM & item, int column) {
+void AppendGlobalText (HGLOBAL & h, const wchar_t * string, std::size_t length = ~0) {
+    if (length == ~0) {
+        length = wcslen (string);
+    }
+
+    if (auto offset = GlobalSize (h)) {
+        if (auto hNew = GlobalReAlloc (h, offset + length * sizeof (wchar_t), 0)) {
+            h = hNew;
+
+            offset -= sizeof (wchar_t);
+            if (auto p = (char *) GlobalLock (h)) {
+                memcpy (p + offset, string, length * sizeof (wchar_t));
+                memset (p + offset + length * sizeof (wchar_t), 0, sizeof (wchar_t));
+                GlobalUnlock (h);
+            }
+        }
+    }
+}
+
+LRESULT ListViewCtrl_GetItemText (HWND hWnd, int idCtrl, LV_ITEM & item, int column) {
     item.iSubItem = column;
+    return SendDlgItemMessage (hWnd, 1, LVM_GETITEMTEXT, item.iItem, (LPARAM) &item);
+}
+
+LRESULT ListViewCtrl_SetItemText (HWND hWnd, int idCtrl, LV_ITEM & item, int column) {
     item.cchTextMax = 32768;
     item.pszText = szTmpBuffer2;
 
-    if (!SendDlgItemMessage (hWnd, 1, LVM_GETITEMTEXT, item.iItem, (LPARAM) &item) || (wcscmp (szTmpBuffer, szTmpBuffer2) != 0)) {
+    if (!ListViewCtrl_GetItemText (hWnd, 1, item, column) || (wcscmp (szTmpBuffer, szTmpBuffer2) != 0)) {
         item.pszText = szTmpBuffer;
         return SendDlgItemMessage (hWnd, 1, LVM_SETITEMTEXT, item.iItem, (LPARAM) &item);
     } else
@@ -723,6 +746,69 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
             }
             break;
 
+        case WM_COMMAND:
+            switch (LOWORD (wParam)) {
+                case 0x20: { // Ctrl+A
+                    LVITEM item;
+                    item.state = LVIS_SELECTED;
+                    item.stateMask = LVIS_SELECTED;
+                    SendDlgItemMessage (hWnd, 1, LVM_SETITEMSTATE, -1, (LPARAM) &item);
+                } break;
+
+                case 0x21: // Ctrl+C
+                    if (auto rows = SendDlgItemMessage (hWnd, 1, LVM_GETSELECTEDCOUNT, 0, 0)) {
+                        if (OpenClipboard (hWnd)) {
+                            if (auto text = GlobalAlloc (GMEM_MOVEABLE | GMEM_ZEROINIT, sizeof (wchar_t))) {
+
+                                if (rows > 1) {
+                                    auto c = 0;
+                                    while (auto length = LoadString (NULL, c + 1, szTmpBuffer, 32768)) {
+                                        if (c) {
+                                            AppendGlobalText (text, L"\t", 1);
+                                        }
+                                        AppendGlobalText (text, szTmpBuffer, length);
+                                        ++c;
+                                    }
+                                    AppendGlobalText (text, L"\r\n", 2);
+                                }
+
+                                LV_ITEM item;
+                                item.iItem = 0;
+                                item.pszText = szTmpBuffer;
+                                item.cchTextMax = 32768;
+
+                                auto n = SendDlgItemMessage (hWnd, 1, LVM_GETITEMCOUNT, 0, 0);
+                                auto columns = Header_GetItemCount ((HWND) SendDlgItemMessage (hWnd, 1, LVM_GETHEADER, 0, 0));
+
+                                while (item.iItem < n) {
+                                    if (SendDlgItemMessage (hWnd, 1, LVM_GETITEMSTATE, item.iItem, LVIS_SELECTED) & LVIS_SELECTED) {
+
+                                        for (auto c = 0; c < columns - 1; ++c) {
+                                            if (c) {
+                                                AppendGlobalText (text, L"\t", 1);
+                                            }
+                                            if (auto length = ListViewCtrl_GetItemText (hWnd, 1, item, c + 1)) {
+                                                AppendGlobalText (text, szTmpBuffer, length);
+                                            }
+                                        }
+                                        AppendGlobalText (text, L"\r\n", 2);
+                                    }
+                                    ++item.iItem;
+                                }
+
+                                EmptyClipboard ();
+                                if (!SetClipboardData (CF_UNICODETEXT, text)) {
+                                    GlobalFree (text);
+                                }
+                            }
+
+                            CloseClipboard ();
+                        }
+                    }
+                    break;
+            }
+            break;
+
         case WM_NOTIFY:
             // TODO: Ctrl+A and Ctrl+C of selected
             switch (((LPNMHDR) lParam)->code) {
@@ -786,6 +872,8 @@ int APIENTRY wWinMain (_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int
             if (build >= 22631) os.minor = 2;
             if (build >= 26100) os.minor = 3;
             if (build >= 26200) os.minor = 4;
+            //if (build >= 28000) os.minor = 5;
+            //if (build >= 26300) os.minor = 6;
         } else {
             if (build >= 10586) os.minor = 1;
             if (build >= 14393) os.minor = 2;
@@ -820,6 +908,8 @@ int APIENTRY wWinMain (_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int
                 NULL, NULL, NULL, NULL, szVersionInfo [0], NULL
             };
 
+            const auto hAccelerators = LoadAccelerators (GetCurrentModuleHandle (), MAKEINTRESOURCE (1));
+
             if (auto atom = RegisterClassEx (&wndclass)) {
                 _snwprintf (szTmpBuffer, 32768, L"%s %s - %s // NT %u.%u",
                             szVersionInfo [5], szVersionInfo [6], szVersionInfo [2], os.major, os.minor);
@@ -832,6 +922,9 @@ int APIENTRY wWinMain (_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int
 
                     MSG message {};
                     while (GetMessage (&message, hWnd, 0, 0) > 0) {
+                        if (TranslateAccelerator (hWnd, hAccelerators, &message))
+                            continue;
+
                         if (!IsDialogMessage (hWnd, &message)) {
                             TranslateMessage (&message);
                             DispatchMessage (&message);

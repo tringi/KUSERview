@@ -9,9 +9,9 @@
 	internalname		= KUSERview
 
 	major = 0
-	minor = 4
-	patch = 0
-	build = 415
+	minor = 5
+	patch = 1
+	build = 457
 
 [versioninfo]
 	filename	= %dir%\%internalname%-vi.rc
