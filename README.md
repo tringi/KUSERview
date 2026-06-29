@@ -1,5 +1,6 @@
 # KUSER_SHARED_DATA Viewer
-*plain and simple KUSER_SHARED_DATA structure viewer*
+
+Plain and simple KUSER_SHARED_DATA structure viewer, that also displays content from SYSTEM_HYPERVISOR_USER_SHARED_DATA and SILO_USER_SHARED_DATA if available.
 
 ## Download latest EXE
 
@@ -11,3 +12,5 @@
 ## References
 
 * https://ntdoc.m417z.com/kuser_shared_data
+* https://ntdoc.m417z.com/silo_user_shared_data
+* https://ntdoc.m417z.com/system_hypervisor_user_shared_data
