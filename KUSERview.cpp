@@ -1,4 +1,5 @@
 #include <Windows.h>
+#include <winternl.h>
 #include <CommCtrl.h>
 
 #include <charconv>
@@ -33,6 +34,11 @@ struct WinVer {
 
 WinVer os;
 
+enum Page : UCHAR {
+    UserPage,
+    SiloPage,
+    HyperPage,
+};
 enum Type : UCHAR {
     NoType,
     U8Type,
@@ -68,7 +74,8 @@ enum Decode : UCHAR {
 static const struct Element {
     USHORT offset;
     USHORT length;
-    bool   live;
+    bool   live   : 1;
+    Page   page   : 7;
     Type   type   : 3;
     Decode decode : 5;
     WinVer minver;
@@ -76,105 +83,129 @@ static const struct Element {
 
     const char * name;
 } structure [] = {
-    { 0x0000,   4,  true, U32Type,      U32Decode, {  3,5 }, { 5,1 }, "TickCountLow" },
-    { 0x0004,   4, false, U32Type, TickMultiplier, {  3,5 }, { 0,0 }, "TickCountMultiplier" },
-    { 0x0008,  12,  true, U32Type,      U64Decode, {  3,5 }, { 5,2 }, "InterruptTime" },
-    { 0x0008,  12,  true, U32Type,     SystemTime, {  6,0 }, { 0,0 }, "InterruptTime" },
-    { 0x0014,  12,  true, U32Type,     SystemTime, {  3,5 }, { 0,0 }, "SystemTime" },
-    { 0x0020,  12,  true, U32Type,     SystemTime, {  3,5 }, { 0,0 }, "TimeZoneBias" },
-    { 0x002C,   4, false, U16Type,    ImageNumber, {  3,5 }, { 0,0 }, "ImageNumber" },
-    { 0x0030, 260, false,  NoType,   StringDecode, {  3,5 }, { 0,0 }, "NtSystemRoot" },
-    { 0x0238,   4, false, U32Type,       NoDecode, {  4,0 }, { 4,0 }, "DosDeviceMap" }, // each bit is DOS disk letter
-    { 0x0238,   4, false, U32Type,      U32Decode, {  5,0 }, { 0,0 }, "MaxStackTraceDepth" },
-    { 0x023C,   4, false, U32Type,      U32Decode, {  4,0 }, { 0,0 }, "CryptoExponent" },
-    { 0x0240,   4,  true, U32Type,     TimeZoneId, {  4,0 }, { 0,0 }, "TimeZoneId" },
-    { 0x0244,  20, false,  U8Type,       NoDecode, {  4,0 }, { 4,0 }, "DosDeviceDriveType" },
-    { 0x0244,   4, false, U32Type,      U32Decode, {  5,2 }, { 0,0 }, "LargePageMinimum" },
-    { 0x0248,   4,  true, U32Type,      U32Decode, {  6,2 }, { 0,0 }, "AitSamplingValue" }, // App Impact Telemetry
-    { 0x024C,   4, false, U32Type,       NoDecode, {  6,2 }, { 0,0 }, "AppCompatFlag" },
-    { 0x0250,   8,  true, U64Type,      U64Decode, {  6,2 }, { 0,0 }, "RNGSeedVersion" },
-    { 0x0258,   4, false, U32Type,      U32Decode, {  6,2 }, { 0,0 }, "GlobalValidationRunLevel" },
-    { 0x025C,   4,  true, U32Type,      U32Decode, {  6,2 }, { 0,0 }, "TimeZoneBiasStamp" },
-    { 0x0260,   4, false, U32Type,      U32Decode, { 10,0 }, { 0,0 }, "NtBuildNumber" },
-    { 0x0264,   4, false, U32Type,  NtProductType, {  4,0 }, { 0,0 }, "NtProductType" },
-    { 0x0268,   1, false,  NoType,     BoolDecode, {  4,0 }, { 0,0 }, "ProductTypeIsValid" }, // 0 on install or when updating
-    { 0x026A,   2, false, U16Type, NativeProcArch, {  6,2 }, { 0,0 }, "NativeProcessorArchitecture" },
-    { 0x026C,   4, false, U32Type,      U32Decode, {  4,0 }, { 0,0 }, "NtMajorVersion" },
-    { 0x0270,   4, false, U32Type,      U32Decode, {  4,0 }, { 0,0 }, "NtMinorVersion" },
-    { 0x0274,  64, false,  NoType,   ProcFeatures, {  4,0 }, { 0,0 }, "ProcessorFeatures" },
-    { 0x02B4,   4, false, U32Type,       NoDecode, {  4,0 }, { 0,0 }, "MmHighestUserAddressDeprecated" },
-    { 0x02B8,   4, false, U32Type,       NoDecode, {  4,0 }, { 0,0 }, "MmSystemRangeStartDeprecated" },
-    { 0x02BC,   4,  true, U32Type,      U32Decode, {  5,0 }, { 0,0 }, "TimeSlipDebugging" },
-    { 0x02C0,   4, false, U32Type,        AltArch, {  5,0 }, { 0,0 }, "AlternativeArchitecture" },
-    { 0x02C4,   4, false, U32Type,      U32Decode, { 10,0 }, { 0,0 }, "BootId" },
-    { 0x02C8,   8, false, U64Type,     SystemTime, {  5,0 }, { 0,0 }, "SystemExpirationDate" },
-    { 0x02D0,   4, false, U32Type,      SuiteMask, {  4,0 }, { 0,0 }, "SuiteMask" },
-    { 0x02D4,   1,  true,  NoType,  KdDebugDecode, {  5,0 }, { 0,0 }, "KdDebuggerEnabled" },
-    { 0x02D5,   1, false,  NoType,  MitigationPol, {  5,1 }, { 0,0 }, "MitigationPolicies" },
-    { 0x02D6,   2, false, U16Type,      U16Decode, { 10,7 }, { 0,0 }, "CyclesPerYield" },
-    { 0x02D8,   4,  true, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "ActiveConsoleId" }, // TODO: can be -1 for Windows Sandbox
-    { 0x02DC,   4,  true, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "DismountCount" },
-    { 0x02E0,   4,  true, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "ComPlusPackage" },
-    { 0x02E4,   4,  true, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "LastSystemRITEventTickCount" }, // updates every second as long as some users provide input
-    { 0x02E8,   4,  true, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "NumberOfPhysicalPages" },
-    { 0x02EC,   1, false,  NoType,     BoolDecode, {  5,1 }, { 0,0 }, "SafeBootMode" },
-    { 0x02ED,   1,  true,  NoType,       NoDecode, {  6,1 }, { 6,1 }, "TscQpcData" },
-    { 0x02ED,   1, false,  NoType, VirtFlagDecode, { 10,2 }, { 0,0 }, "VirtualizationFlags" },
-    { 0x02F0,   4, false, U32Type,       NoDecode, {  5,1 }, { 5,2 }, "TraceLogging" },
-    { 0x02F0,   4,  true, U32Type,SharedDataFlags, {  6,0 }, { 0,0 }, "SharedDataFlags" },
-    { 0x02F8,   8, false, U64Type,       NoDecode, {  5,1 }, { 0,0 }, "TestRetInstruction" },
-    { 0x0300,   4, false, U32Type,       NoDecode, {  5,1 }, { 6,1 }, "SystemCall" },
-    { 0x0304,   4, false, U32Type,       NoDecode, {  5,1 }, { 6,1 }, "SystemCallReturn" },
-    { 0x0300,   8, false, U64Type,      U64Decode, {  6,2 }, { 0,0 }, "QpcFrequency" },
-    { 0x0308,   4, false, U32Type,  SysCallDecode, { 10,1 }, { 0,0 }, "SystemCall" },
-    { 0x030C,   4, false, U32Type,       NoDecode, { 10,9 }, { 0,0 }, "UserCetAvailableEnvironments" },
-    { 0x0310,   8,  true, U64Type,      U64Decode, { 11,3 }, { 0,0 }, "FullNumberOfPhysicalPages" }, 
-    { 0x0320,   8,  true, U64Type,      U64Decode, {  5,1 }, { 0,0 }, "TickCount" },
-    { 0x0330,   4, false, U32Type,       NoDecode, {  5,1 }, { 0,0 }, "Cookie" },
-    { 0x0334,  64, false, U32Type,      U32Decode, {  5,1 }, { 6,1 }, "Wow64SharedInformation" },
-    { 0x0338,   8,  true, U64Type,      U64Decode, {  6,0 }, { 0,0 }, "ConsoleSessionForegroundProcessId" },
-    { 0x0340,   8,  true, U64Type,      U64Decode, {  6,2 }, { 6,2 }, "TimeUpdateSequence" },
-    { 0x0340,   8,  true, U64Type,      U64Decode, {  6,3 }, { 0,0 }, "TimeUpdateLock" },
-    { 0x0348,   8,  true, U64Type,      U64Decode, {  6,2 }, { 0,0 }, "BaselineSystemTimeQpc" },
-    { 0x0350,   8,  true, U64Type,      U64Decode, {  6,2 }, { 0,0 }, "BaselineInterruptTimeQpc" },
-    { 0x0358,   8,  true, U64Type,     SystemTime, {  6,2 }, { 0,0 }, "QpcSystemTimeIncrement" },
-    { 0x0360,   8, false, U64Type,     SystemTime, {  6,2 }, { 0,0 }, "QpcInterruptTimeIncrement" },
-    { 0x0368,   4,  true, U32Type,      U32Decode, {  6,2 }, { 6,3 }, "QpcSystemTimeIncrement32" },
-    { 0x0368,   1,  true,  U8Type,       U8Decode, { 10,0 }, { 0,0 }, "QpcSystemTimeIncrementShift" },
-    { 0x0369,   1,  true,  U8Type,       U8Decode, { 10,0 }, { 0,0 }, "QpcInterruptTimeIncrementShift" },
-    { 0x036A,   2,  true, U16Type,      U16Decode, { 10,0 }, { 0,0 }, "UnparkedProcessorCount" },
-    { 0x036C,   4,  true, U32Type,      U32Decode, {  6,2 }, { 6,3 }, "QpcInterruptTimeIncrement32" },
-    { 0x036C,  16, false, U32Type,  EnclaveDecode, { 10,1 }, { 0,0 }, "EnclaveFeatureMask" },
-    { 0x0370,   1,  true,  U8Type,       U8Decode, {  6,2 }, { 6,3 }, "QpcSystemTimeIncrementShift" },
-    { 0x0371,   1,  true,  U8Type,       U8Decode, {  6,2 }, { 6,3 }, "QpcInterruptTimeIncrementShift" },
-    { 0x037C,   4,  true, U32Type,      U32Decode, { 10,4 }, { 0,0 }, "TelemetryCoverageRound" },
-    { 0x0380,  16, false, U16Type,       NoDecode, {  6,0 }, { 6,0 }, "UserModeGlobalLogger" },
-    { 0x0380,  32, false, U16Type,       NoDecode, {  6,1 }, { 0,0 }, "UserModeGlobalLogger" },
-    { 0x0390,   8,  true, U32Type,       NoDecode, {  6,0 }, { 6,0 }, "HeapTracingPid" },
-    { 0x0398,   8,  true, U32Type,       NoDecode, {  6,0 }, { 6,0 }, "CritSecTracingPid" },
-    { 0x03A0,   4,  true, U32Type,       NoDecode, {  6,0 }, { 0,0 }, "ImageFileExecutionOptions" }, // bit 0: app verifier is globally enabled?
-    { 0x03A4,   4,  true, U32Type,      U32Decode, {  6,1 }, { 0,0 }, "LangGenerationCount" },
-    { 0x03A8,   4,  true, U32Type,      U32Decode, {  6,0 }, { 6,0 }, "ActiveProcessorAffinity" },
-    { 0x03B0,   8,  true, U64Type,     SystemTime, {  6,0 }, { 0,0 }, "InterruptTimeBias" }, // ??
-    { 0x03B8,   8,  true, U64Type,     SystemTime, {  6,1 }, { 6,2 }, "TscQpcBias" },
-    { 0x03B8,   8,  true, U64Type,     SystemTime, {  6,3 }, { 0,0 }, "QpcBias" },
-    { 0x03C0,   4,  true, U32Type,      U32Decode, {  6,1 }, { 0,0 }, "ActiveProcessorCount" },
-    { 0x03C4,   2,  true, U16Type,      U16Decode, {  6,1 }, { 0,0 }, "ActiveGroupCount" },
-    { 0x03C6,   2,  true,  U8Type,       NoDecode, {  6,2 }, { 6,2 }, "TscQpcData" },
-    { 0x03C6,   2,  true,  U8Type,       NoDecode, {  6,3 }, { 0,0 }, "QpcData" },
-    { 0x03C8,   4,  true, U32Type,      U32Decode, {  6,1 }, { 6,1 }, "AitSamplingValue" },
-    { 0x03CC,   4, false, U32Type,       NoDecode, {  6,1 }, { 6,1 }, "AppCompatFlag" },
-    { 0x03D0,   8, false, U64Type,       NoDecode, {  6,1 }, { 6,1 }, "SystemDllNativeRelocation" },
-    { 0x03D8,   4, false, U32Type,       NoDecode, {  6,1 }, { 6,1 }, "SystemDllWowRelocation" },
-    { 0x03C8,   8,  true, U64Type,     SystemTime, {  6,2 }, { 0,0 }, "TimeZoneBiasEffectiveStart" },
-    { 0x03D0,   8,  true, U64Type,     SystemTime, {  6,2 }, { 0,0 }, "TimeZoneBiasEffectiveEnd" },
-    { 0x03E0, 528,  true, U32Type,       NoDecode, {  6,1 }, { 6,1 }, "XState" },
-    { 0x03D8, 840,  true, U32Type,       NoDecode, {  6,2 }, { 0,0 }, "XState" },
-    { 0x0710,  16, false,  U8Type,       NoDecode, { 10,0 }, {10,15}, "FeatureConfigurationChangeStamp" },
-    { 0x0720,  16, false,  U8Type,       NoDecode, { 11,0 }, { 0,0 }, "FeatureConfigurationChangeStamp" },
-    { 0x0730,   8, false, U64Type,       NoDecode, { 11,0 }, { 0,0 }, "UserPointerAuthMask" },
-    //{ 0x0738,   8, false, U64Type,       NoDecode, { 11,0 }, { 0,0 }, "XStateArm64" },
+    { 0x0000,   4,  true, UserPage, U32Type,      U32Decode, {  3,5 }, { 5,1 }, "TickCountLow" },
+    { 0x0004,   4, false, UserPage, U32Type, TickMultiplier, {  3,5 }, { 0,0 }, "TickCountMultiplier" },
+    { 0x0008,  12,  true, UserPage, U32Type,      U64Decode, {  3,5 }, { 5,2 }, "InterruptTime" },
+    { 0x0008,  12,  true, UserPage, U32Type,     SystemTime, {  6,0 }, { 0,0 }, "InterruptTime" },
+    { 0x0014,  12,  true, UserPage, U32Type,     SystemTime, {  3,5 }, { 0,0 }, "SystemTime" },
+    { 0x0020,  12,  true, UserPage, U32Type,     SystemTime, {  3,5 }, { 0,0 }, "TimeZoneBias" },
+    { 0x002C,   4, false, UserPage, U16Type,    ImageNumber, {  3,5 }, { 0,0 }, "ImageNumber" },
+    { 0x0030, 520, false, UserPage, U16Type,   StringDecode, {  3,5 }, { 0,0 }, "NtSystemRoot" },
+    { 0x0238,   4, false, UserPage, U32Type,       NoDecode, {  4,0 }, { 4,0 }, "DosDeviceMap" }, // each bit is DOS disk letter
+    { 0x0238,   4, false, UserPage, U32Type,      U32Decode, {  5,0 }, { 0,0 }, "MaxStackTraceDepth" },
+    { 0x023C,   4, false, UserPage, U32Type,      U32Decode, {  4,0 }, { 0,0 }, "CryptoExponent" },
+    { 0x0240,   4,  true, UserPage, U32Type,     TimeZoneId, {  4,0 }, { 0,0 }, "TimeZoneId" },
+    { 0x0244,  20, false, UserPage,  U8Type,       NoDecode, {  4,0 }, { 4,0 }, "DosDeviceDriveType" },
+    { 0x0244,   4, false, UserPage, U32Type,      U32Decode, {  5,2 }, { 0,0 }, "LargePageMinimum" },
+    { 0x0248, 4, true, UserPage, U32Type, U32Decode, { 6,2 }, { 0,0 }, "AitSamplingValue" }, // App Impact Telemetry
+    { 0x024C,   4, false, UserPage, U32Type,       NoDecode, {  6,2 }, { 0,0 }, "AppCompatFlag" },
+    { 0x0250,   8,  true, UserPage, U64Type,      U64Decode, {  6,2 }, { 0,0 }, "RNGSeedVersion" },
+    { 0x0258,   4, false, UserPage, U32Type,      U32Decode, {  6,2 }, { 0,0 }, "GlobalValidationRunLevel" },
+    { 0x025C,   4,  true, UserPage, U32Type,      U32Decode, {  6,2 }, { 0,0 }, "TimeZoneBiasStamp" },
+    { 0x0260,   4, false, UserPage, U32Type,      U32Decode, { 10,0 }, { 0,0 }, "NtBuildNumber" },
+    { 0x0264,   4, false, UserPage, U32Type,  NtProductType, {  4,0 }, { 0,0 }, "NtProductType" },
+    { 0x0268,   1, false, UserPage,  NoType,     BoolDecode, {  4,0 }, { 0,0 }, "ProductTypeIsValid" }, // 0 on install or when updating
+    { 0x026A,   2, false, UserPage, U16Type, NativeProcArch, {  6,2 }, { 0,0 }, "NativeProcessorArchitecture" },
+    { 0x026C,   4, false, UserPage, U32Type,      U32Decode, {  4,0 }, { 0,0 }, "NtMajorVersion" },
+    { 0x0270,   4, false, UserPage, U32Type,      U32Decode, {  4,0 }, { 0,0 }, "NtMinorVersion" },
+    { 0x0274,  64, false, UserPage,  NoType,   ProcFeatures, {  4,0 }, { 0,0 }, "ProcessorFeatures" },
+    { 0x02B4,   4, false, UserPage, U32Type,       NoDecode, {  4,0 }, { 0,0 }, "MmHighestUserAddressDeprecated" },
+    { 0x02B8,   4, false, UserPage, U32Type,       NoDecode, {  4,0 }, { 0,0 }, "MmSystemRangeStartDeprecated" },
+    { 0x02BC,   4,  true, UserPage, U32Type,      U32Decode, {  5,0 }, { 0,0 }, "TimeSlipDebugging" },
+    { 0x02C0,   4, false, UserPage, U32Type,        AltArch, {  5,0 }, { 0,0 }, "AlternativeArchitecture" },
+    { 0x02C4,   4, false, UserPage, U32Type,      U32Decode, { 10,0 }, { 0,0 }, "BootId" },
+    { 0x02C8,   8, false, UserPage, U64Type,     SystemTime, {  5,0 }, { 0,0 }, "SystemExpirationDate" },
+    { 0x02D0,   4, false, UserPage, U32Type,      SuiteMask, {  4,0 }, { 0,0 }, "SuiteMask" },
+    { 0x02D4,   1,  true, UserPage,  NoType,  KdDebugDecode, {  5,0 }, { 0,0 }, "KdDebuggerEnabled" },
+    { 0x02D5,   1, false, UserPage,  NoType,  MitigationPol, {  5,1 }, { 0,0 }, "MitigationPolicies" },
+    { 0x02D6,   2, false, UserPage, U16Type,      U16Decode, { 10,7 }, { 0,0 }, "CyclesPerYield" },
+    { 0x02D8,   4,  true, UserPage, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "ActiveConsoleId" }, // TODO: can be -1 for Windows Sandbox
+    { 0x02DC,   4,  true, UserPage, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "DismountCount" },
+    { 0x02E0,   4,  true, UserPage, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "ComPlusPackage" },
+    { 0x02E4,   4,  true, UserPage, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "LastSystemRITEventTickCount" }, // updates every second as long as some users provide input
+    { 0x02E8,   4,  true, UserPage, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "NumberOfPhysicalPages" },
+    { 0x02EC,   1, false, UserPage,  NoType,     BoolDecode, {  5,1 }, { 0,0 }, "SafeBootMode" },
+    { 0x02ED,   1,  true, UserPage,  NoType,       NoDecode, {  6,1 }, { 6,1 }, "TscQpcData" },
+    { 0x02ED,   1, false, UserPage,  NoType, VirtFlagDecode, { 10,2 }, { 0,0 }, "VirtualizationFlags" },
+    { 0x02F0,   4, false, UserPage, U32Type,       NoDecode, {  5,1 }, { 5,2 }, "TraceLogging" },
+    { 0x02F0,   4,  true, UserPage, U32Type,SharedDataFlags, {  6,0 }, { 0,0 }, "SharedDataFlags" },
+    { 0x02F8,   8, false, UserPage, U64Type,       NoDecode, {  5,1 }, { 0,0 }, "TestRetInstruction" },
+    { 0x0300,   4, false, UserPage, U32Type,       NoDecode, {  5,1 }, { 6,1 }, "SystemCall" },
+    { 0x0304,   4, false, UserPage, U32Type,       NoDecode, {  5,1 }, { 6,1 }, "SystemCallReturn" },
+    { 0x0300,   8, false, UserPage, U64Type,      U64Decode, {  6,2 }, { 0,0 }, "QpcFrequency" },
+    { 0x0308,   4, false, UserPage, U32Type,  SysCallDecode, { 10,1 }, { 0,0 }, "SystemCall" },
+    { 0x030C,   4, false, UserPage, U32Type,       NoDecode, { 10,9 }, { 0,0 }, "UserCetAvailableEnvironments" },
+    { 0x0310,   8,  true, UserPage, U64Type,      U64Decode, { 11,3 }, { 0,0 }, "FullNumberOfPhysicalPages" },
+    { 0x0320,   8,  true, UserPage, U64Type,      U64Decode, {  5,1 }, { 0,0 }, "TickCount" },
+    { 0x0330,   4, false, UserPage, U32Type,       NoDecode, {  5,1 }, { 0,0 }, "Cookie" },
+    { 0x0334,  64, false, UserPage, U32Type,      U32Decode, {  5,1 }, { 6,1 }, "Wow64SharedInformation" },
+    { 0x0338,   8,  true, UserPage, U64Type,      U64Decode, {  6,0 }, { 0,0 }, "ConsoleSessionForegroundProcessId" },
+    { 0x0340,   8,  true, UserPage, U64Type,      U64Decode, {  6,2 }, { 6,2 }, "TimeUpdateSequence" },
+    { 0x0340,   8,  true, UserPage, U64Type,      U64Decode, {  6,3 }, { 0,0 }, "TimeUpdateLock" },
+    { 0x0348,   8,  true, UserPage, U64Type,      U64Decode, {  6,2 }, { 0,0 }, "BaselineSystemTimeQpc" },
+    { 0x0350,   8,  true, UserPage, U64Type,      U64Decode, {  6,2 }, { 0,0 }, "BaselineInterruptTimeQpc" },
+    { 0x0358,   8,  true, UserPage, U64Type,     SystemTime, {  6,2 }, { 0,0 }, "QpcSystemTimeIncrement" },
+    { 0x0360,   8, false, UserPage, U64Type,     SystemTime, {  6,2 }, { 0,0 }, "QpcInterruptTimeIncrement" },
+    { 0x0368,   4,  true, UserPage, U32Type,      U32Decode, {  6,2 }, { 6,3 }, "QpcSystemTimeIncrement32" },
+    { 0x0368,   1,  true, UserPage,  U8Type,       U8Decode, { 10,0 }, { 0,0 }, "QpcSystemTimeIncrementShift" },
+    { 0x0369,   1,  true, UserPage,  U8Type,       U8Decode, { 10,0 }, { 0,0 }, "QpcInterruptTimeIncrementShift" },
+    { 0x036A,   2,  true, UserPage, U16Type,      U16Decode, { 10,0 }, { 0,0 }, "UnparkedProcessorCount" },
+    { 0x036C,   4,  true, UserPage, U32Type,      U32Decode, {  6,2 }, { 6,3 }, "QpcInterruptTimeIncrement32" },
+    { 0x036C,  16, false, UserPage, U32Type,  EnclaveDecode, { 10,1 }, { 0,0 }, "EnclaveFeatureMask" },
+    { 0x0370,   1,  true, UserPage,  U8Type,       U8Decode, {  6,2 }, { 6,3 }, "QpcSystemTimeIncrementShift" },
+    { 0x0371,   1,  true, UserPage,  U8Type,       U8Decode, {  6,2 }, { 6,3 }, "QpcInterruptTimeIncrementShift" },
+    { 0x037C,   4,  true, UserPage, U32Type,      U32Decode, { 10,4 }, { 0,0 }, "TelemetryCoverageRound" },
+    { 0x0380,  16, false, UserPage, U16Type,       NoDecode, {  6,0 }, { 6,0 }, "UserModeGlobalLogger" },
+    { 0x0380,  32, false, UserPage, U16Type,       NoDecode, {  6,1 }, { 0,0 }, "UserModeGlobalLogger" },
+    { 0x0390,   8,  true, UserPage, U32Type,       NoDecode, {  6,0 }, { 6,0 }, "HeapTracingPid" },
+    { 0x0398,   8,  true, UserPage, U32Type,       NoDecode, {  6,0 }, { 6,0 }, "CritSecTracingPid" },
+    { 0x03A0,   4,  true, UserPage, U32Type,       NoDecode, {  6,0 }, { 0,0 }, "ImageFileExecutionOptions" }, // bit 0: app verifier is globally enabled?
+    { 0x03A4,   4,  true, UserPage, U32Type,      U32Decode, {  6,1 }, { 0,0 }, "LangGenerationCount" },
+    { 0x03A8,   4,  true, UserPage, U32Type,      U32Decode, {  6,0 }, { 6,0 }, "ActiveProcessorAffinity" },
+    { 0x03B0,   8,  true, UserPage, U64Type,     SystemTime, {  6,0 }, { 0,0 }, "InterruptTimeBias" }, // ??
+    { 0x03B8,   8,  true, UserPage, U64Type,     SystemTime, {  6,1 }, { 6,2 }, "TscQpcBias" },
+    { 0x03B8,   8,  true, UserPage, U64Type,     SystemTime, {  6,3 }, { 0,0 }, "QpcBias" },
+    { 0x03C0,   4,  true, UserPage, U32Type,      U32Decode, {  6,1 }, { 0,0 }, "ActiveProcessorCount" },
+    { 0x03C4,   2,  true, UserPage, U16Type,      U16Decode, {  6,1 }, { 0,0 }, "ActiveGroupCount" },
+    { 0x03C6,   2,  true, UserPage,  U8Type,       NoDecode, {  6,2 }, { 6,2 }, "TscQpcData" },
+    { 0x03C6,   2,  true, UserPage,  U8Type,       NoDecode, {  6,3 }, { 0,0 }, "QpcData" },
+    { 0x03C8,   4,  true, UserPage, U32Type,      U32Decode, {  6,1 }, { 6,1 }, "AitSamplingValue" },
+    { 0x03CC,   4, false, UserPage, U32Type,       NoDecode, {  6,1 }, { 6,1 }, "AppCompatFlag" },
+    { 0x03D0,   8, false, UserPage, U64Type,       NoDecode, {  6,1 }, { 6,1 }, "SystemDllNativeRelocation" },
+    { 0x03D8,   4, false, UserPage, U32Type,       NoDecode, {  6,1 }, { 6,1 }, "SystemDllWowRelocation" },
+    { 0x03C8,   8,  true, UserPage, U64Type,     SystemTime, {  6,2 }, { 0,0 }, "TimeZoneBiasEffectiveStart" },
+    { 0x03D0,   8,  true, UserPage, U64Type,     SystemTime, {  6,2 }, { 0,0 }, "TimeZoneBiasEffectiveEnd" },
+    { 0x03E0, 528,  true, UserPage, U32Type,       NoDecode, {  6,1 }, { 6,1 }, "XState" },
+    { 0x03D8, 840,  true, UserPage, U32Type,       NoDecode, {  6,2 }, { 0,0 }, "XState" },
+    { 0x0710,  16, false, UserPage,  U8Type,       NoDecode, { 10,0 }, {10,15}, "FeatureConfigurationChangeStamp" },
+    { 0x0720,  16, false, UserPage,  U8Type,       NoDecode, { 11,0 }, { 0,0 }, "FeatureConfigurationChangeStamp" },
+    { 0x0730,   8, false, UserPage, U64Type,       NoDecode, { 11,0 }, { 0,0 }, "UserPointerAuthMask" },
+    //{ 0x0738,   8, false, KUserPage, U64Type,       NoDecode, { 11,0 }, { 0,0 }, "XStateArm64" },
+
+    { 0x0000,   4,  true, HyperPage, U32Type,      U32Decode, { 10,5 }, { 0,0 }, "Hypervisor TimeUpdateLock" },
+    { 0x0008,   8,  true, HyperPage, U64Type,      U64Decode, { 10,5 }, { 0,0 }, "Hypervisor QpcMultiplier" },
+    { 0x0010,   8,  true, HyperPage, U64Type,     SystemTime, { 10,5 }, { 0,0 }, "Hypervisor QpcBias" },
+
+    // { 0x0000, 624,  true, SiloPage,  U8Type,       NoDecode, { 10,2 }, { 0,0 }, "Silo" },
+    { 0x0000,   4, false, SiloPage, U32Type,      U32Decode, { 10,2 }, { 0,0 }, "Silo ServiceSessionId" },
+    { 0x0004,   4,  true, SiloPage, U32Type,      U32Decode, { 10,2 }, { 0,0 }, "Silo ActiveConsoleId" },
+    { 0x0008,   8,  true, SiloPage, U64Type,      U64Decode, { 10,2 }, { 0,0 }, "Silo ConsoleSessionForegroundProcessId" },
+    { 0x0010,   4, false, SiloPage, U32Type,  NtProductType, { 10,2 }, { 0,0 }, "Silo NtProductType" },
+    { 0x0014,   4, false, SiloPage, U32Type,      SuiteMask, { 10,2 }, { 0,0 }, "Silo SuiteMask" },
+    { 0x0018,   4, false, SiloPage, U32Type,      U32Decode, { 10,3 }, { 0,0 }, "Silo SharedUserSessionId" },
+    { 0x001C,   1, false, SiloPage,  NoType,     BoolDecode, { 10,3 }, { 0,0 }, "Silo IsMultiSessionSku" },
+    { 0x001D,   1, false, SiloPage,  NoType,     BoolDecode, { 10,3 }, { 0,0 }, "Silo IsStateSeparationEnabled" },
+    { 0x001E, 520, false, SiloPage, U16Type,   StringDecode, { 10,3 }, { 0,0 }, "Silo NtSystemRoot" },
+    { 0x0226,  32, false, SiloPage, U16Type,       NoDecode, { 10,3 }, { 0,0 }, "Silo UserModeGlobalLogger" },
+    { 0x0248,   4, false, SiloPage, U32Type,     TimeZoneId, { 10,12 }, { 0,0 }, "Silo TimeZoneId" },
+    { 0x024C,   4, false, SiloPage, U32Type,      U32Decode, { 10,12 }, { 0,0 }, "Silo TimeZoneBiasStamp" },
+    { 0x0250,  12,  true, SiloPage, U32Type,     SystemTime, { 10,12 }, { 0,0 }, "Silo TimeZoneBias" },
+    { 0x0260,   8,  true, SiloPage, U64Type,     SystemTime, { 10,12 }, { 0,0 }, "Silo TimeZoneBiasEffectiveStart" },
+    { 0x0268,   8,  true, SiloPage, U64Type,     SystemTime, { 10,12 }, { 0,0 }, "Silo TimeZoneBiasEffectiveEnd" },
 };
+
+const std::uint8_t * silodata = nullptr;
+const std::uint8_t * hyperdata = nullptr;
 
 static inline HMODULE GetCurrentModuleHandle () {
     return reinterpret_cast <HMODULE> (&__ImageBase);
@@ -326,11 +357,34 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                             itemA.iSubItem = 2;
                             SendMessage (h, LVM_SETITEMTEXTA, index, (LPARAM) &itemA);
 
-                            _snwprintf (szTmpBuffer, 32768, L"0x7FFE%04X", element.offset);
+                            switch (element.page) {
+                                case HyperPage:
+                                    if (hyperdata) {
+                                        _snwprintf (szTmpBuffer, 32768, L"0x%08I64X", (std::uint64_t) (std::uintptr_t) (hyperdata + element.offset));
+                                    } else {
+                                        _snwprintf (szTmpBuffer, 32768, L"0x???? %04X", element.offset);
+                                    }
+                                    break;
+                                case SiloPage:
+                                    if (silodata) {
+                                        _snwprintf (szTmpBuffer, 32768, L"0x%08I64X", (std::uint64_t) (std::uintptr_t) (silodata + element.offset));
+                                    } else {
+                                        _snwprintf (szTmpBuffer, 32768, L"0x???? %04X", element.offset);
+                                    }
+                                    break;
+                                case UserPage:
+                                    _snwprintf (szTmpBuffer, 32768, L"0x7FFE%04X", element.offset);
+                                    break;
+                                default:
+                                    szTmpBuffer [0] = L'\0';
+                            }
+
                             ListView_SetItemText (h, index, 1, szTmpBuffer);
 
                             if (element.maxver.byte == element.minver.byte) {
-                                _snwprintf (szTmpBuffer, 32768, L"%u.%u only", // TODO: rsrc
+                                LoadString (NULL, 0x0010, szTmpBuffer2, 32768);
+
+                                _snwprintf (szTmpBuffer, 32768, szTmpBuffer2,
                                             element.minver.major, element.minver.minor);
                             } else
                             if (element.maxver.byte) {
@@ -410,10 +464,28 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                             case 2: display = element.live; break;
                         }
 
-                        if (display) {
+                        const std::uint8_t * address = nullptr;
+                        switch (element.page) {
+                            case HyperPage:
+                                if (hyperdata) {
+                                    address = reinterpret_cast <const std::uint8_t *> (hyperdata + element.offset);
+                                }
+                                break;
+                            case SiloPage:
+                                if (silodata) {
+                                    address = reinterpret_cast <const std::uint8_t *> (silodata + element.offset);
+                                }
+                                break;
+                            case UserPage:
+                                address = reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset);
+                                break;
+                        }
+
+                        if (display && address) {
+
                             szTmpBuffer [0] = L'\0';
                             for (auto i = 0u; i != element.length; ++i) {
-                                _snwprintf (szTmpBuffer + 3 * i, 4, L"%02X ", reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [i]);
+                                _snwprintf (szTmpBuffer + 3 * i, 4, L"%02X ", address [i]);
                             }
 
                             ListViewCtrl_SetItemText (hWnd, 1, item, 4);
@@ -422,22 +494,22 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                             switch (element.type) {
                                 case U8Type:
                                     for (auto i = 0u; i != element.length / 1; ++i) {
-                                        _snwprintf (szTmpBuffer + 5 * i, 6, L"0x%02X ", reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [i]);
+                                        _snwprintf (szTmpBuffer + 5 * i, 6, L"0x%02X ", reinterpret_cast <const std::uint8_t *> (address) [i]);
                                     }
                                     break;
                                 case U16Type:
                                     for (auto i = 0u; i != element.length / 2; ++i) {
-                                        _snwprintf (szTmpBuffer + 7 * i, 8, L"0x%04X ", reinterpret_cast <const std::uint16_t *> (0x7FFE0000u + element.offset) [i]);
+                                        _snwprintf (szTmpBuffer + 7 * i, 8, L"0x%04X ", reinterpret_cast <const std::uint16_t *> (address) [i]);
                                     }
                                     break;
                                 case U32Type:
                                     for (auto i = 0u; i != element.length / 4; ++i) {
-                                        _snwprintf (szTmpBuffer + 11 * i, 12, L"0x%08X ", reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) [i]);
+                                        _snwprintf (szTmpBuffer + 11 * i, 12, L"0x%08X ", reinterpret_cast <const std::uint32_t *> (address) [i]);
                                     }
                                     break;
                                 case U64Type:
                                     for (auto i = 0u; i != element.length / 8; ++i) {
-                                        _snwprintf (szTmpBuffer + 19 * i, 20, L"0x%016llX ", reinterpret_cast <const std::uint64_t *> (0x7FFE0000u + element.offset) [i]);
+                                        _snwprintf (szTmpBuffer + 19 * i, 20, L"0x%016llX ", reinterpret_cast <const std::uint64_t *> (address) [i]);
                                     }
                                     break;
                             }
@@ -449,7 +521,7 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                 case BoolDecode: {
                                     bool result = false;
                                     for (auto i = 0u; i != element.length; ++i) {
-                                        if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [i] != 0) {
+                                        if (address [i] != 0) {
                                             result = true;
                                             break;
                                         }
@@ -458,29 +530,29 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                 } break;
                                 
                                 case U8Decode:
-                                    _snwprintf (szTmpBuffer, 32768, L"%u", *reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset));
+                                    _snwprintf (szTmpBuffer, 32768, L"%u", *reinterpret_cast <const std::uint8_t *> (address));
                                     break;
                                 case U16Decode:
-                                    _snwprintf (szTmpBuffer, 32768, L"%u", *reinterpret_cast <const std::uint16_t *> (0x7FFE0000u + element.offset));
+                                    _snwprintf (szTmpBuffer, 32768, L"%u", *reinterpret_cast <const std::uint16_t *> (address));
                                     break;
                                 case U32Decode:
-                                    _snwprintf (szTmpBuffer, 32768, L"%u", *reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset));
+                                    _snwprintf (szTmpBuffer, 32768, L"%u", *reinterpret_cast <const std::uint32_t *> (address));
                                     break;
                                 case U64Decode:
-                                    _snwprintf (szTmpBuffer, 32768, L"%llu", *reinterpret_cast <const std::uint64_t *> (0x7FFE0000u + element.offset));
+                                    _snwprintf (szTmpBuffer, 32768, L"%llu", *reinterpret_cast <const std::uint64_t *> (address));
                                     break;
                                 case StringDecode:
-                                    _snwprintf (szTmpBuffer, 32768, L"%s", reinterpret_cast <const wchar_t *> (0x7FFE0000u + element.offset));
+                                    _snwprintf (szTmpBuffer, 32768, L"%s", reinterpret_cast <const wchar_t *> (address));
                                     break;
                                 case TickMultiplier: {
-                                    auto x = (unsigned int) ((*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) * 1000uLL) >> 0x18);
+                                    auto x = (unsigned int) ((*reinterpret_cast <const std::uint32_t *> (address) * 1000uLL) >> 0x18);
                                     _snwprintf (szTmpBuffer, 32768, L"%u.%u", x / 1000, x % 1000);
                                 } break;
 
                                 case SystemTime:
-                                    if (auto value = *reinterpret_cast <const std::int64_t *> (0x7FFE0000u + element.offset)) {
+                                    if (auto value = *reinterpret_cast <const std::int64_t *> (address)) {
                                         SYSTEMTIME st;
-                                        if (FileTimeToSystemTime (reinterpret_cast <const FILETIME *> (0x7FFE0000u + element.offset), &st) && (st.wYear > 1900)) {
+                                        if (FileTimeToSystemTime (reinterpret_cast <const FILETIME *> (address), &st) && (st.wYear > 1900)) {
                                             _snwprintf (szTmpBuffer, 32768, L"%04u-%02u-%02u %02u:%02u:%02u.%03u",
                                                         st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
                                         } else
@@ -515,7 +587,7 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                     break;
 
                                 case TimeZoneId:
-                                    switch (auto value = *reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset)) {
+                                    switch (auto value = *reinterpret_cast <const std::uint32_t *> (address)) {
                                         case 0: _snwprintf (szTmpBuffer, 32768, L"Not using DST"); break;
                                         case 1: _snwprintf (szTmpBuffer, 32768, L"Standard (winter)"); break;
                                         case 2: _snwprintf (szTmpBuffer, 32768, L"Daylight Savings Time (summer)"); break;
@@ -526,7 +598,7 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                     break;
 
                                 case NtProductType:
-                                    switch (auto value = *reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset)) {
+                                    switch (auto value = *reinterpret_cast <const std::uint32_t *> (address)) {
                                         case 1: _snwprintf (szTmpBuffer, 32768, L"Workstation"); break;
                                         case 2: _snwprintf (szTmpBuffer, 32768, L"Domain Controller"); break;
                                         case 3: _snwprintf (szTmpBuffer, 32768, L"Server"); break;
@@ -537,7 +609,7 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                     break;
 
                                 case NativeProcArch:
-                                    switch (auto value = *reinterpret_cast <const std::uint16_t *> (0x7FFE0000u + element.offset)) {
+                                    switch (auto value = *reinterpret_cast <const std::uint16_t *> (address)) {
                                         case PROCESSOR_ARCHITECTURE_INTEL: _snwprintf (szTmpBuffer, 32768, L"x86-32"); break;
                                         case PROCESSOR_ARCHITECTURE_ARM:   _snwprintf (szTmpBuffer, 32768, L"ARM32"); break;
                                         case PROCESSOR_ARCHITECTURE_IA64:  _snwprintf (szTmpBuffer, 32768, L"Itanium"); break;
@@ -551,7 +623,7 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                     break;
 
                                 case AltArch:
-                                    switch (auto value = *reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset)) {
+                                    switch (auto value = *reinterpret_cast <const std::uint32_t *> (address)) {
                                         case 0: _snwprintf (szTmpBuffer, 32768, L""); break;
                                         case 1: _snwprintf (szTmpBuffer, 32768, L"NEC98x86"); break;
 
@@ -561,7 +633,7 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                     break;
 
                                 case ImageNumber: {
-                                    auto p = reinterpret_cast <const std::uint16_t *> (0x7FFE0000u + element.offset);
+                                    auto p = reinterpret_cast <const std::uint16_t *> (address);
                                     for (auto i = 0u; i != element.length / 2; ++i) {
                                         if (i) {
                                             if (p [i] != p [i - 1]) {
@@ -585,7 +657,7 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                 } break;
 
                                 case SuiteMask:
-                                    if (auto value = *reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset)) {
+                                    if (auto value = *reinterpret_cast <const std::uint32_t *> (address)) {
                                         if (value & VER_SUITE_SMALLBUSINESS) AppendTmp (L"SBS");
                                         if (value & VER_SUITE_ENTERPRISE) AppendTmp (L"Enterprise");
                                         if (value & VER_SUITE_BACKOFFICE) AppendTmp (L"Back Office");
@@ -608,7 +680,7 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                     break;
 
                                 case MitigationPol:
-                                    if (auto value = *reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset)) {
+                                    if (auto value = *reinterpret_cast <const std::uint8_t *> (address)) {
                                         switch (value & 0x03) {
                                             case 0: AppendTmp (L"NX OFF"); break;
                                             case 1: AppendTmp (L"NX ON"); break;
@@ -631,93 +703,93 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                     break;
 
                                 case ProcFeatures:
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_FLOATING_POINT_PRECISION_ERRATA        ]) AppendTmp (L"FP errata");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_FLOATING_POINT_EMULATED                ]) AppendTmp (L"FP emulated");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_COMPARE_EXCHANGE_DOUBLE                ]) AppendTmp (L"CMPXCHG8B");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_MMX_INSTRUCTIONS_AVAILABLE             ]) AppendTmp (L"MMX");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_XMMI_INSTRUCTIONS_AVAILABLE            ]) AppendTmp (L"SSE");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_3DNOW_INSTRUCTIONS_AVAILABLE           ]) AppendTmp (L"3Dnow!");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_RDTSC_INSTRUCTION_AVAILABLE            ]) AppendTmp (L"RDTSC");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_PAE_ENABLED                            ]) AppendTmp (L"PAE");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_XMMI64_INSTRUCTIONS_AVAILABLE          ]) AppendTmp (L"SSE2");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_SSE_DAZ_MODE_AVAILABLE                 ]) AppendTmp (L"SSE DAZ");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_NX_ENABLED                             ]) AppendTmp (L"NX");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_SSE3_INSTRUCTIONS_AVAILABLE            ]) AppendTmp (L"SSE3");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_COMPARE_EXCHANGE128                    ]) AppendTmp (L"CMPXCHG16B");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_COMPARE64_EXCHANGE128                  ]) AppendTmp (L"CMP8XCHG16");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_XSAVE_ENABLED                          ]) AppendTmp (L"XSAVE");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_VFP_32_REGISTERS_AVAILABLE         ]) AppendTmp (L"VFP");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_NEON_INSTRUCTIONS_AVAILABLE        ]) AppendTmp (L"NEON");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_SECOND_LEVEL_ADDRESS_TRANSLATION       ]) AppendTmp (L"SLAT");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_VIRT_FIRMWARE_ENABLED                  ]) AppendTmp (L"Virtualization");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_RDWRFSGSBASE_AVAILABLE                 ]) AppendTmp (L"RDWRFSGSBASE");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_FASTFAIL_AVAILABLE                     ]) AppendTmp (L"Fast Fail");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_DIVIDE_INSTRUCTION_AVAILABLE       ]) AppendTmp (L"Divide");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_64BIT_LOADSTORE_ATOMIC             ]) AppendTmp (L"64b Load/Store");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_EXTERNAL_CACHE_AVAILABLE           ]) AppendTmp (L"External Cache");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_FMAC_INSTRUCTIONS_AVAILABLE        ]) AppendTmp (L"FMAC");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_RDRAND_INSTRUCTION_AVAILABLE           ]) AppendTmp (L"RDRAND");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_V8_INSTRUCTIONS_AVAILABLE          ]) AppendTmp (L"ARM64");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_V8_CRYPTO_INSTRUCTIONS_AVAILABLE   ]) AppendTmp (L"Crypto");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_V8_CRC32_INSTRUCTIONS_AVAILABLE    ]) AppendTmp (L"CRC32");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_RDTSCP_INSTRUCTION_AVAILABLE           ]) AppendTmp (L"RDTSCP");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_RDPID_INSTRUCTION_AVAILABLE            ]) AppendTmp (L"RDPID");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_V81_ATOMIC_INSTRUCTIONS_AVAILABLE  ]) AppendTmp (L"Atomics");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_MONITORX_INSTRUCTION_AVAILABLE         ]) AppendTmp (L"MONITORX");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_SSSE3_INSTRUCTIONS_AVAILABLE           ]) AppendTmp (L"SSSE3");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_SSE4_1_INSTRUCTIONS_AVAILABLE          ]) AppendTmp (L"SSE4.1");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_SSE4_2_INSTRUCTIONS_AVAILABLE          ]) AppendTmp (L"SSE4.2");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_AVX_INSTRUCTIONS_AVAILABLE             ]) AppendTmp (L"AVX");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_AVX2_INSTRUCTIONS_AVAILABLE            ]) AppendTmp (L"AVX2");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_AVX512F_INSTRUCTIONS_AVAILABLE         ]) AppendTmp (L"AVX512F");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ERMS_AVAILABLE                         ]) AppendTmp (L"ERMS");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_V82_DP_INSTRUCTIONS_AVAILABLE      ]) AppendTmp (L"DP");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_V83_JSCVT_INSTRUCTIONS_AVAILABLE   ]) AppendTmp (L"JSCVT");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_V83_LRCPC_INSTRUCTIONS_AVAILABLE   ]) AppendTmp (L"LRCPC");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_SVE_INSTRUCTIONS_AVAILABLE         ]) AppendTmp (L"SVE");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_SVE2_INSTRUCTIONS_AVAILABLE        ]) AppendTmp (L"SVE2");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_SVE2_1_INSTRUCTIONS_AVAILABLE      ]) AppendTmp (L"SVE2.1");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_SVE_AES_INSTRUCTIONS_AVAILABLE     ]) AppendTmp (L"AES");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_SVE_PMULL128_INSTRUCTIONS_AVAILABLE]) AppendTmp (L"PMULL128");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_SVE_BITPERM_INSTRUCTIONS_AVAILABLE ]) AppendTmp (L"BITPERM");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_SVE_BF16_INSTRUCTIONS_AVAILABLE    ]) AppendTmp (L"BF16");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_SVE_EBF16_INSTRUCTIONS_AVAILABLE   ]) AppendTmp (L"EBF16");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_SVE_B16B16_INSTRUCTIONS_AVAILABLE  ]) AppendTmp (L"B16B16");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_SVE_SHA3_INSTRUCTIONS_AVAILABLE    ]) AppendTmp (L"SHA3");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_SVE_SM4_INSTRUCTIONS_AVAILABLE     ]) AppendTmp (L"SM4");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_SVE_I8MM_INSTRUCTIONS_AVAILABLE    ]) AppendTmp (L"I8MM");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_SVE_F32MM_INSTRUCTIONS_AVAILABLE   ]) AppendTmp (L"F32MM");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_SVE_F64MM_INSTRUCTIONS_AVAILABLE   ]) AppendTmp (L"F64MM");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_BMI2_INSTRUCTIONS_AVAILABLE            ]) AppendTmp (L"BMI2");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_MOVDIR64B_INSTRUCTION_AVAILABLE        ]) AppendTmp (L"MOVDIR64B");
-                                    if (reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) [PF_ARM_LSE2_AVAILABLE                     ]) AppendTmp (L"LSE2");
+                                    if (address [PF_FLOATING_POINT_PRECISION_ERRATA        ]) AppendTmp (L"FP errata");
+                                    if (address [PF_FLOATING_POINT_EMULATED                ]) AppendTmp (L"FP emulated");
+                                    if (address [PF_COMPARE_EXCHANGE_DOUBLE                ]) AppendTmp (L"CMPXCHG8B");
+                                    if (address [PF_MMX_INSTRUCTIONS_AVAILABLE             ]) AppendTmp (L"MMX");
+                                    if (address [PF_XMMI_INSTRUCTIONS_AVAILABLE            ]) AppendTmp (L"SSE");
+                                    if (address [PF_3DNOW_INSTRUCTIONS_AVAILABLE           ]) AppendTmp (L"3Dnow!");
+                                    if (address [PF_RDTSC_INSTRUCTION_AVAILABLE            ]) AppendTmp (L"RDTSC");
+                                    if (address [PF_PAE_ENABLED                            ]) AppendTmp (L"PAE");
+                                    if (address [PF_XMMI64_INSTRUCTIONS_AVAILABLE          ]) AppendTmp (L"SSE2");
+                                    if (address [PF_SSE_DAZ_MODE_AVAILABLE                 ]) AppendTmp (L"SSE DAZ");
+                                    if (address [PF_NX_ENABLED                             ]) AppendTmp (L"NX");
+                                    if (address [PF_SSE3_INSTRUCTIONS_AVAILABLE            ]) AppendTmp (L"SSE3");
+                                    if (address [PF_COMPARE_EXCHANGE128                    ]) AppendTmp (L"CMPXCHG16B");
+                                    if (address [PF_COMPARE64_EXCHANGE128                  ]) AppendTmp (L"CMP8XCHG16");
+                                    if (address [PF_XSAVE_ENABLED                          ]) AppendTmp (L"XSAVE");
+                                    if (address [PF_ARM_VFP_32_REGISTERS_AVAILABLE         ]) AppendTmp (L"VFP");
+                                    if (address [PF_ARM_NEON_INSTRUCTIONS_AVAILABLE        ]) AppendTmp (L"NEON");
+                                    if (address [PF_SECOND_LEVEL_ADDRESS_TRANSLATION       ]) AppendTmp (L"SLAT");
+                                    if (address [PF_VIRT_FIRMWARE_ENABLED                  ]) AppendTmp (L"Virtualization");
+                                    if (address [PF_RDWRFSGSBASE_AVAILABLE                 ]) AppendTmp (L"RDWRFSGSBASE");
+                                    if (address [PF_FASTFAIL_AVAILABLE                     ]) AppendTmp (L"Fast Fail");
+                                    if (address [PF_ARM_DIVIDE_INSTRUCTION_AVAILABLE       ]) AppendTmp (L"Divide");
+                                    if (address [PF_ARM_64BIT_LOADSTORE_ATOMIC             ]) AppendTmp (L"64b Load/Store");
+                                    if (address [PF_ARM_EXTERNAL_CACHE_AVAILABLE           ]) AppendTmp (L"External Cache");
+                                    if (address [PF_ARM_FMAC_INSTRUCTIONS_AVAILABLE        ]) AppendTmp (L"FMAC");
+                                    if (address [PF_RDRAND_INSTRUCTION_AVAILABLE           ]) AppendTmp (L"RDRAND");
+                                    if (address [PF_ARM_V8_INSTRUCTIONS_AVAILABLE          ]) AppendTmp (L"ARM64");
+                                    if (address [PF_ARM_V8_CRYPTO_INSTRUCTIONS_AVAILABLE   ]) AppendTmp (L"Crypto");
+                                    if (address [PF_ARM_V8_CRC32_INSTRUCTIONS_AVAILABLE    ]) AppendTmp (L"CRC32");
+                                    if (address [PF_RDTSCP_INSTRUCTION_AVAILABLE           ]) AppendTmp (L"RDTSCP");
+                                    if (address [PF_RDPID_INSTRUCTION_AVAILABLE            ]) AppendTmp (L"RDPID");
+                                    if (address [PF_ARM_V81_ATOMIC_INSTRUCTIONS_AVAILABLE  ]) AppendTmp (L"Atomics");
+                                    if (address [PF_MONITORX_INSTRUCTION_AVAILABLE         ]) AppendTmp (L"MONITORX");
+                                    if (address [PF_SSSE3_INSTRUCTIONS_AVAILABLE           ]) AppendTmp (L"SSSE3");
+                                    if (address [PF_SSE4_1_INSTRUCTIONS_AVAILABLE          ]) AppendTmp (L"SSE4.1");
+                                    if (address [PF_SSE4_2_INSTRUCTIONS_AVAILABLE          ]) AppendTmp (L"SSE4.2");
+                                    if (address [PF_AVX_INSTRUCTIONS_AVAILABLE             ]) AppendTmp (L"AVX");
+                                    if (address [PF_AVX2_INSTRUCTIONS_AVAILABLE            ]) AppendTmp (L"AVX2");
+                                    if (address [PF_AVX512F_INSTRUCTIONS_AVAILABLE         ]) AppendTmp (L"AVX512F");
+                                    if (address [PF_ERMS_AVAILABLE                         ]) AppendTmp (L"ERMS");
+                                    if (address [PF_ARM_V82_DP_INSTRUCTIONS_AVAILABLE      ]) AppendTmp (L"DP");
+                                    if (address [PF_ARM_V83_JSCVT_INSTRUCTIONS_AVAILABLE   ]) AppendTmp (L"JSCVT");
+                                    if (address [PF_ARM_V83_LRCPC_INSTRUCTIONS_AVAILABLE   ]) AppendTmp (L"LRCPC");
+                                    if (address [PF_ARM_SVE_INSTRUCTIONS_AVAILABLE         ]) AppendTmp (L"SVE");
+                                    if (address [PF_ARM_SVE2_INSTRUCTIONS_AVAILABLE        ]) AppendTmp (L"SVE2");
+                                    if (address [PF_ARM_SVE2_1_INSTRUCTIONS_AVAILABLE      ]) AppendTmp (L"SVE2.1");
+                                    if (address [PF_ARM_SVE_AES_INSTRUCTIONS_AVAILABLE     ]) AppendTmp (L"AES");
+                                    if (address [PF_ARM_SVE_PMULL128_INSTRUCTIONS_AVAILABLE]) AppendTmp (L"PMULL128");
+                                    if (address [PF_ARM_SVE_BITPERM_INSTRUCTIONS_AVAILABLE ]) AppendTmp (L"BITPERM");
+                                    if (address [PF_ARM_SVE_BF16_INSTRUCTIONS_AVAILABLE    ]) AppendTmp (L"BF16");
+                                    if (address [PF_ARM_SVE_EBF16_INSTRUCTIONS_AVAILABLE   ]) AppendTmp (L"EBF16");
+                                    if (address [PF_ARM_SVE_B16B16_INSTRUCTIONS_AVAILABLE  ]) AppendTmp (L"B16B16");
+                                    if (address [PF_ARM_SVE_SHA3_INSTRUCTIONS_AVAILABLE    ]) AppendTmp (L"SHA3");
+                                    if (address [PF_ARM_SVE_SM4_INSTRUCTIONS_AVAILABLE     ]) AppendTmp (L"SM4");
+                                    if (address [PF_ARM_SVE_I8MM_INSTRUCTIONS_AVAILABLE    ]) AppendTmp (L"I8MM");
+                                    if (address [PF_ARM_SVE_F32MM_INSTRUCTIONS_AVAILABLE   ]) AppendTmp (L"F32MM");
+                                    if (address [PF_ARM_SVE_F64MM_INSTRUCTIONS_AVAILABLE   ]) AppendTmp (L"F64MM");
+                                    if (address [PF_BMI2_INSTRUCTIONS_AVAILABLE            ]) AppendTmp (L"BMI2");
+                                    if (address [PF_MOVDIR64B_INSTRUCTION_AVAILABLE        ]) AppendTmp (L"MOVDIR64B");
+                                    if (address [PF_ARM_LSE2_AVAILABLE                     ]) AppendTmp (L"LSE2");
                                     break;
 
                                 case SharedDataFlags:
-                                    if (*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) & 0x0000'0001) AppendTmp (L"Error Port");
-                                    if (*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) & 0x0000'0002) AppendTmp (L"Elevation");
-                                    if (*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) & 0x0000'0004) AppendTmp (L"Virtualization");
-                                    if (*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) & 0x0000'0008) AppendTmp (L"Installer Detect");
-                                    if (*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) & 0x0000'0010) AppendTmp (L"LKG");
-                                    if (*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) & 0x0000'0020) AppendTmp (L"Dynamic Processor");
-                                    if (*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) & 0x0000'0040) AppendTmp (L"Console Broker");
-                                    if (*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) & 0x0000'0080) AppendTmp (L"Secure Boot");
-                                    if (*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) & 0x0000'0100) AppendTmp (L"Multi Session SKU");
-                                    if (*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) & 0x0000'0200) AppendTmp (L"Multi Users In Session SKU");
-                                    if (*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) & 0x0000'0400) AppendTmp (L"State Separation");
-                                    if (*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) & 0x0000'0800) AppendTmp (L"Split Token");
-                                    if (*reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) & 0x0000'1000) AppendTmp (L"Shadow Admin");
+                                    if (*reinterpret_cast <const std::uint32_t *> (address) & 0x0000'0001) AppendTmp (L"Error Port");
+                                    if (*reinterpret_cast <const std::uint32_t *> (address) & 0x0000'0002) AppendTmp (L"Elevation");
+                                    if (*reinterpret_cast <const std::uint32_t *> (address) & 0x0000'0004) AppendTmp (L"Virtualization");
+                                    if (*reinterpret_cast <const std::uint32_t *> (address) & 0x0000'0008) AppendTmp (L"Installer Detect");
+                                    if (*reinterpret_cast <const std::uint32_t *> (address) & 0x0000'0010) AppendTmp (L"LKG");
+                                    if (*reinterpret_cast <const std::uint32_t *> (address) & 0x0000'0020) AppendTmp (L"Dynamic Processor");
+                                    if (*reinterpret_cast <const std::uint32_t *> (address) & 0x0000'0040) AppendTmp (L"Console Broker");
+                                    if (*reinterpret_cast <const std::uint32_t *> (address) & 0x0000'0080) AppendTmp (L"Secure Boot");
+                                    if (*reinterpret_cast <const std::uint32_t *> (address) & 0x0000'0100) AppendTmp (L"Multi Session SKU");
+                                    if (*reinterpret_cast <const std::uint32_t *> (address) & 0x0000'0200) AppendTmp (L"Multi Users In Session SKU");
+                                    if (*reinterpret_cast <const std::uint32_t *> (address) & 0x0000'0400) AppendTmp (L"State Separation");
+                                    if (*reinterpret_cast <const std::uint32_t *> (address) & 0x0000'0800) AppendTmp (L"Split Token");
+                                    if (*reinterpret_cast <const std::uint32_t *> (address) & 0x0000'1000) AppendTmp (L"Shadow Admin");
                                     break;
 
                                 case KdDebugDecode:
-                                    if (*reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) & 0x01) AppendTmp (L"Enabled"); else AppendTmp (L"Disabled");
-                                    if (*reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) & 0x02) AppendTmp (L"Connected"); else AppendTmp (L"Disconnected");
+                                    if (*reinterpret_cast <const std::uint8_t *> (address) & 0x01) AppendTmp (L"Enabled"); else AppendTmp (L"Disabled");
+                                    if (*reinterpret_cast <const std::uint8_t *> (address) & 0x02) AppendTmp (L"Connected"); else AppendTmp (L"Disconnected");
                                     break;
 
                                 case SysCallDecode:
-                                    switch (auto value = *reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset)) {
-                                        case 0: _snwprintf (szTmpBuffer, 32768, L"INT 2E"); break;
-                                        case 1: _snwprintf (szTmpBuffer, 32768, L"SYSCALL preferred"); break;
+                                    switch (auto value = *reinterpret_cast <const std::uint32_t *> (address)) {
+                                        case 0: _snwprintf (szTmpBuffer, 32768, L"SYSCALL"); break;
+                                        case 1: _snwprintf (szTmpBuffer, 32768, L"INT 2E preferred"); break;
 
                                         default:
                                             _snwprintf (szTmpBuffer, 32768, L"Unknown");
@@ -725,15 +797,15 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                     break;
 
                                 case EnclaveDecode:
-                                    if (reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) [0] & 0x0000'0001) AppendTmp (L"SGX1");
-                                    if (reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) [0] & 0x0000'0002) AppendTmp (L"SGX2");
+                                    if (reinterpret_cast <const std::uint32_t *> (address) [0] & 0x0000'0001) AppendTmp (L"SGX1");
+                                    if (reinterpret_cast <const std::uint32_t *> (address) [0] & 0x0000'0002) AppendTmp (L"SGX2");
                                     // IUM - Isolated User Mode
-                                    if (reinterpret_cast <const std::uint32_t *> (0x7FFE0000u + element.offset) [0] & 0x0000'0100) AppendTmp (L"VBS/IUM"); else AppendTmp (L"VBS/IUM/Hyper-V disabled");
+                                    if (reinterpret_cast <const std::uint32_t *> (address) [0] & 0x0000'0100) AppendTmp (L"VBS/IUM"); else AppendTmp (L"VBS/IUM/Hyper-V disabled");
                                     break;
 
                                 case VirtFlagDecode:
-                                    if (*reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) & 0x01) AppendTmp (L"VMX/SVM Available");
-                                    if (*reinterpret_cast <const std::uint8_t *> (0x7FFE0000u + element.offset) & 0x02) AppendTmp (L"Locked");
+                                    if (*reinterpret_cast <const std::uint8_t *> (address) & 0x01) AppendTmp (L"VMX/SVM Available");
+                                    if (*reinterpret_cast <const std::uint8_t *> (address) & 0x02) AppendTmp (L"Locked");
                                     break;
                             }
 
@@ -810,7 +882,6 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
             break;
 
         case WM_NOTIFY:
-            // TODO: Ctrl+A and Ctrl+C of selected
             switch (((LPNMHDR) lParam)->code) {
                 case NM_CUSTOMDRAW:
                     LPNMLVCUSTOMDRAW  lplvcd = (LPNMLVCUSTOMDRAW) lParam;
@@ -823,7 +894,16 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
 
                         case CDDS_ITEMPREPAINT:
                             if (structure [index].minver <= os && (os <= structure [index].maxver || structure [index].maxver.byte == 0)) {
-                                lplvcd->clrText = GetSysColor (COLOR_WINDOWTEXT);
+                                switch (structure [index].page) {
+                                    case SiloPage:
+                                        lplvcd->clrText = 0xAA00AA;
+                                        break;
+                                    case HyperPage:
+                                        lplvcd->clrText = 0xCC4400;
+                                        break;
+                                    default:
+                                        lplvcd->clrText = GetSysColor (COLOR_WINDOWTEXT);
+                                }
                             } else {
                                 lplvcd->clrText = 0xAAAAAA;
                             }
@@ -855,10 +935,16 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
 }
 
 #if NDEBUG
-void EntryPoint () {
+void EntryPoint (PPEB pPEB) {
 #else
 int APIENTRY wWinMain (_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int) {
 #endif
+    NtQuerySystemInformation ((SYSTEM_INFORMATION_CLASS) 0xC5, &hyperdata, sizeof hyperdata, NULL);
+
+#if !NDEBUG
+    PPEB pPEB = NtCurrentTeb ()->ProcessEnvironmentBlock;
+#endif
+    silodata = reinterpret_cast <const std::uint8_t *> (pPEB->Reserved9 [5]);
 
     auto version = GetVersion ();
     os.major = LOBYTE (LOWORD (version));
@@ -932,7 +1018,7 @@ int APIENTRY wWinMain (_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int
                     }
 
 #if NDEBUG
-                    ExitProcess (message.wParam);
+                    ExitProcess ((UINT) message.wParam);
 #else
                     return (int) message.wParam;
 #endif
