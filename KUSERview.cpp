@@ -944,7 +944,12 @@ int APIENTRY wWinMain (_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int
 #if !NDEBUG
     PPEB pPEB = NtCurrentTeb ()->ProcessEnvironmentBlock;
 #endif
+
+#ifdef _WIN64
     silodata = reinterpret_cast <const std::uint8_t *> (pPEB->Reserved9 [5]);
+#else
+    silodata = reinterpret_cast <const std::uint8_t *> (pPEB->Reserved9 [6]);
+#endif
 
     auto version = GetVersion ();
     os.major = LOBYTE (LOWORD (version));
