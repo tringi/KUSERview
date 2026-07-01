@@ -934,6 +934,15 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
     return DefWindowProc (hWnd, message, wParam, lParam);
 }
 
+template <typename P>
+bool Symbol (HMODULE h, P & pointer, const char * name) {
+    if (P p = reinterpret_cast <P> (GetProcAddress (h, name))) {
+        pointer = p;
+        return true;
+    } else
+        return false;
+}
+
 #if NDEBUG
 void EntryPoint (PPEB pPEB) {
 #else
@@ -981,6 +990,13 @@ int APIENTRY wWinMain (_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int
             if (build >= 19045) os.minor = 13;
             if (build >= 20348) os.minor = 14;
             if (build >= 20349) os.minor = 15;
+        }
+    }
+
+    if (HMODULE hUser32 = GetModuleHandle (L"USER32")) {
+        BOOL (WINAPI * ptrSetProcessDpiAwarenessContext) (_In_ DPI_AWARENESS_CONTEXT value);
+        if (Symbol (hUser32, ptrSetProcessDpiAwarenessContext, "SetProcessDpiAwarenessContext")) {
+            ptrSetProcessDpiAwarenessContext (DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED);
         }
     }
 

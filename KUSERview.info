@@ -10,8 +10,8 @@
 
 	major = 0
 	minor = 6
-	patch = 1
-	build = 525
+	patch = 2
+	build = 551
 
 [versioninfo]
 	filename	= %dir%\%internalname%-vi.rc
@@ -47,8 +47,6 @@
 	assemblyDescription	= %filedescription%
 
 	requestedExecutionLevel	= asInvoker
-	dpiAware	= False
-	dpiAwareness	= Unaware
 	longPathAware	= True
 	heapType	= SegmentHeap
 
@@ -60,4 +58,4 @@
 
 	dependentAssembly:1	= Microsoft.Windows.Common-Controls 6.0.0.0 6595b64144ccf1df
 
-	maxversiontested	= "10.0.28000.0"
+	maxversiontested	= "10.0.29617.0"
