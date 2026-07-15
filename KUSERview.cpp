@@ -954,15 +954,17 @@ int APIENTRY wWinMain (_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int
     PPEB pPEB = NtCurrentTeb ()->ProcessEnvironmentBlock;
 #endif
 
-#ifdef _WIN64
-    silodata = reinterpret_cast <const std::uint8_t *> (pPEB->Reserved9 [5]);
-#else
-    silodata = reinterpret_cast <const std::uint8_t *> (pPEB->Reserved9 [6]);
-#endif
-
     auto version = GetVersion ();
     os.major = LOBYTE (LOWORD (version));
     os.minor = HIBYTE (LOWORD (version));
+
+    if (os.major >= 6) {
+#ifdef _WIN64
+        silodata = reinterpret_cast <const std::uint8_t *> (pPEB->Reserved9 [5]);
+#else
+        silodata = reinterpret_cast <const std::uint8_t *> (pPEB->Reserved9 [6]);
+#endif
+    }
 
     if (os.major == 10) {
         auto build = *reinterpret_cast <const std::uint32_t *> (0x7FFE0260u);
