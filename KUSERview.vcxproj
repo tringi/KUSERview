@@ -164,6 +164,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>ntdll.lib;dwmapi.lib;uxtheme.lib;gdi32.lib;shell32.lib;shlwapi.lib;comctl32.lib;rpcrt4.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/STUB:Tools\stub.exe /EMITPOGOPHASEINFO /EMITVOLATILEMETADATA:NO /EMITTOOLVERSIONINFO:NO %(AdditionalOptions)</AdditionalOptions>
+      <GenerateMapFile>true</GenerateMapFile>
     </Link>
     <PreLinkEvent>
       <Command>lib.exe /nologo /MACHINE:$(PlatformTarget) /def:lib/msvcrt.def /out:lib/msvcrt.lib</Command>
@@ -206,6 +207,7 @@
       <MinimumRequiredVersion>5.1</MinimumRequiredVersion>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
       <EntryPointSymbol>EntryPoint</EntryPointSymbol>
+      <GenerateMapFile>true</GenerateMapFile>
     </Link>
     <PreBuildEvent>
       <Command>"$(SolutionDir)Tools\rsrcgen.exe" "$(ProjectDir)$(AssemblyName).info" "dir=$(ProjectDir)\" debug=$(UseDebugLibraries) platform=$(ProcessorArchitecture) targetfilename=$(TargetFileName)</Command>
@@ -233,6 +235,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>ntdll.lib;dwmapi.lib;uxtheme.lib;gdi32.lib;shell32.lib;shlwapi.lib;comctl32.lib;rpcrt4.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/STUB:Tools\stub.exe /EMITPOGOPHASEINFO /EMITVOLATILEMETADATA:NO /EMITTOOLVERSIONINFO:NO %(AdditionalOptions)</AdditionalOptions>
+      <GenerateMapFile>true</GenerateMapFile>
     </Link>
     <PreLinkEvent>
       <Command>lib.exe /nologo /MACHINE:$(PlatformTarget) /def:lib/msvcrt.def /out:lib/msvcrt.lib</Command>
@@ -257,6 +260,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>ntdll.lib;dwmapi.lib;uxtheme.lib;gdi32.lib;shell32.lib;shlwapi.lib;comctl32.lib;rpcrt4.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/STUB:Tools\stub.exe /EMITPOGOPHASEINFO /EMITVOLATILEMETADATA:NO /EMITTOOLVERSIONINFO:NO %(AdditionalOptions)</AdditionalOptions>
+      <GenerateMapFile>true</GenerateMapFile>
     </Link>
     <PreLinkEvent>
       <Command>lib.exe /nologo /MACHINE:$(PlatformTarget) /def:lib/msvcrt.def /out:lib/msvcrt.lib</Command>
@@ -298,6 +302,7 @@
       <MinimumRequiredVersion>5.2</MinimumRequiredVersion>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
       <EntryPointSymbol>EntryPoint</EntryPointSymbol>
+      <GenerateMapFile>true</GenerateMapFile>
     </Link>
     <PreLinkEvent>
       <Command>lib.exe /nologo /MACHINE:$(PlatformTarget) /def:lib/msvcrt.def /out:lib/msvcrt.lib</Command>
@@ -340,6 +345,7 @@
       </MinimumRequiredVersion>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
       <EntryPointSymbol>EntryPoint</EntryPointSymbol>
+      <GenerateMapFile>true</GenerateMapFile>
     </Link>
     <PreLinkEvent>
       <Command>lib.exe /nologo /MACHINE:$(PlatformTarget) /def:lib/msvcrt.def /out:lib/msvcrt.lib</Command>

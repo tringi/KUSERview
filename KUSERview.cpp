@@ -52,10 +52,13 @@ enum Decode : UCHAR {
     U8Decode,
     U16Decode,
     U32Decode,
+    U32PairDecode,
     U64Decode,
     StringDecode,
     SystemTime,
     TickMultiplier,
+    DiskMapDecode,
+    DiskTypeDecode,
     NtProductType,
     NativeProcArch,
     AltArch,
@@ -69,13 +72,22 @@ enum Decode : UCHAR {
     SysCallDecode,
     EnclaveDecode,
     VirtFlagDecode,
+    XStateDecode,
+    XStateCfDecode,
+    XStateArmDecode,
+    XStateAfDecode,
+    SveLenDecode,
 };
+
+constexpr auto XSTATE_X86 = 0x03D8;
+constexpr auto XSTATE_ARM = 0x0738;
 
 static const struct Element {
     USHORT offset;
     USHORT length;
     bool   live   : 1;
-    Page   page   : 7;
+    bool   arm64  : 1; // ARM64-only fields
+    Page   page   : 2;
     Type   type   : 3;
     Decode decode : 5;
     WinVer minver;
@@ -83,125 +95,171 @@ static const struct Element {
 
     const char * name;
 } structure [] = {
-    { 0x0000,   4,  true, UserPage, U32Type,      U32Decode, {  3,5 }, { 5,1 }, "TickCountLow" },
-    { 0x0004,   4, false, UserPage, U32Type, TickMultiplier, {  3,5 }, { 0,0 }, "TickCountMultiplier" },
-    { 0x0008,  12,  true, UserPage, U32Type,      U64Decode, {  3,5 }, { 5,2 }, "InterruptTime" },
-    { 0x0008,  12,  true, UserPage, U32Type,     SystemTime, {  6,0 }, { 0,0 }, "InterruptTime" },
-    { 0x0014,  12,  true, UserPage, U32Type,     SystemTime, {  3,5 }, { 0,0 }, "SystemTime" },
-    { 0x0020,  12,  true, UserPage, U32Type,     SystemTime, {  3,5 }, { 0,0 }, "TimeZoneBias" },
-    { 0x002C,   4, false, UserPage, U16Type,    ImageNumber, {  3,5 }, { 0,0 }, "ImageNumber" },
-    { 0x0030, 520, false, UserPage, U16Type,   StringDecode, {  3,5 }, { 0,0 }, "NtSystemRoot" },
-    { 0x0238,   4, false, UserPage, U32Type,       NoDecode, {  4,0 }, { 4,0 }, "DosDeviceMap" }, // each bit is DOS disk letter
-    { 0x0238,   4, false, UserPage, U32Type,      U32Decode, {  5,0 }, { 0,0 }, "MaxStackTraceDepth" },
-    { 0x023C,   4, false, UserPage, U32Type,      U32Decode, {  4,0 }, { 0,0 }, "CryptoExponent" },
-    { 0x0240,   4,  true, UserPage, U32Type,     TimeZoneId, {  4,0 }, { 0,0 }, "TimeZoneId" },
-    { 0x0244,  20, false, UserPage,  U8Type,       NoDecode, {  4,0 }, { 4,0 }, "DosDeviceDriveType" },
-    { 0x0244,   4, false, UserPage, U32Type,      U32Decode, {  5,2 }, { 0,0 }, "LargePageMinimum" },
-    { 0x0248, 4, true, UserPage, U32Type, U32Decode, { 6,2 }, { 0,0 }, "AitSamplingValue" }, // App Impact Telemetry
-    { 0x024C,   4, false, UserPage, U32Type,       NoDecode, {  6,2 }, { 0,0 }, "AppCompatFlag" },
-    { 0x0250,   8,  true, UserPage, U64Type,      U64Decode, {  6,2 }, { 0,0 }, "RNGSeedVersion" },
-    { 0x0258,   4, false, UserPage, U32Type,      U32Decode, {  6,2 }, { 0,0 }, "GlobalValidationRunLevel" },
-    { 0x025C,   4,  true, UserPage, U32Type,      U32Decode, {  6,2 }, { 0,0 }, "TimeZoneBiasStamp" },
-    { 0x0260,   4, false, UserPage, U32Type,      U32Decode, { 10,0 }, { 0,0 }, "NtBuildNumber" },
-    { 0x0264,   4, false, UserPage, U32Type,  NtProductType, {  4,0 }, { 0,0 }, "NtProductType" },
-    { 0x0268,   1, false, UserPage,  NoType,     BoolDecode, {  4,0 }, { 0,0 }, "ProductTypeIsValid" }, // 0 on install or when updating
-    { 0x026A,   2, false, UserPage, U16Type, NativeProcArch, {  6,2 }, { 0,0 }, "NativeProcessorArchitecture" },
-    { 0x026C,   4, false, UserPage, U32Type,      U32Decode, {  4,0 }, { 0,0 }, "NtMajorVersion" },
-    { 0x0270,   4, false, UserPage, U32Type,      U32Decode, {  4,0 }, { 0,0 }, "NtMinorVersion" },
-    { 0x0274,  64, false, UserPage,  NoType,   ProcFeatures, {  4,0 }, { 0,0 }, "ProcessorFeatures" },
-    { 0x02B4,   4, false, UserPage, U32Type,       NoDecode, {  4,0 }, { 0,0 }, "MmHighestUserAddressDeprecated" },
-    { 0x02B8,   4, false, UserPage, U32Type,       NoDecode, {  4,0 }, { 0,0 }, "MmSystemRangeStartDeprecated" },
-    { 0x02BC,   4,  true, UserPage, U32Type,      U32Decode, {  5,0 }, { 0,0 }, "TimeSlipDebugging" },
-    { 0x02C0,   4, false, UserPage, U32Type,        AltArch, {  5,0 }, { 0,0 }, "AlternativeArchitecture" },
-    { 0x02C4,   4, false, UserPage, U32Type,      U32Decode, { 10,0 }, { 0,0 }, "BootId" },
-    { 0x02C8,   8, false, UserPage, U64Type,     SystemTime, {  5,0 }, { 0,0 }, "SystemExpirationDate" },
-    { 0x02D0,   4, false, UserPage, U32Type,      SuiteMask, {  4,0 }, { 0,0 }, "SuiteMask" },
-    { 0x02D4,   1,  true, UserPage,  NoType,  KdDebugDecode, {  5,0 }, { 0,0 }, "KdDebuggerEnabled" },
-    { 0x02D5,   1, false, UserPage,  NoType,  MitigationPol, {  5,1 }, { 0,0 }, "MitigationPolicies" },
-    { 0x02D6,   2, false, UserPage, U16Type,      U16Decode, { 10,7 }, { 0,0 }, "CyclesPerYield" },
-    { 0x02D8,   4,  true, UserPage, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "ActiveConsoleId" }, // TODO: can be -1 for Windows Sandbox
-    { 0x02DC,   4,  true, UserPage, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "DismountCount" },
-    { 0x02E0,   4,  true, UserPage, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "ComPlusPackage" },
-    { 0x02E4,   4,  true, UserPage, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "LastSystemRITEventTickCount" }, // updates every second as long as some users provide input
-    { 0x02E8,   4,  true, UserPage, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "NumberOfPhysicalPages" },
-    { 0x02EC,   1, false, UserPage,  NoType,     BoolDecode, {  5,1 }, { 0,0 }, "SafeBootMode" },
-    { 0x02ED,   1,  true, UserPage,  NoType,       NoDecode, {  6,1 }, { 6,1 }, "TscQpcData" },
-    { 0x02ED,   1, false, UserPage,  NoType, VirtFlagDecode, { 10,2 }, { 0,0 }, "VirtualizationFlags" },
-    { 0x02F0,   4, false, UserPage, U32Type,       NoDecode, {  5,1 }, { 5,2 }, "TraceLogging" },
-    { 0x02F0,   4,  true, UserPage, U32Type,SharedDataFlags, {  6,0 }, { 0,0 }, "SharedDataFlags" },
-    { 0x02F8,   8, false, UserPage, U64Type,       NoDecode, {  5,1 }, { 0,0 }, "TestRetInstruction" },
-    { 0x0300,   4, false, UserPage, U32Type,       NoDecode, {  5,1 }, { 6,1 }, "SystemCall" },
-    { 0x0304,   4, false, UserPage, U32Type,       NoDecode, {  5,1 }, { 6,1 }, "SystemCallReturn" },
-    { 0x0300,   8, false, UserPage, U64Type,      U64Decode, {  6,2 }, { 0,0 }, "QpcFrequency" },
-    { 0x0308,   4, false, UserPage, U32Type,  SysCallDecode, { 10,1 }, { 0,0 }, "SystemCall" },
-    { 0x030C,   4, false, UserPage, U32Type,       NoDecode, { 10,9 }, { 0,0 }, "UserCetAvailableEnvironments" },
-    { 0x0310,   8,  true, UserPage, U64Type,      U64Decode, { 11,3 }, { 0,0 }, "FullNumberOfPhysicalPages" },
-    { 0x0320,   8,  true, UserPage, U64Type,      U64Decode, {  5,1 }, { 0,0 }, "TickCount" },
-    { 0x0330,   4, false, UserPage, U32Type,       NoDecode, {  5,1 }, { 0,0 }, "Cookie" },
-    { 0x0334,  64, false, UserPage, U32Type,      U32Decode, {  5,1 }, { 6,1 }, "Wow64SharedInformation" },
-    { 0x0338,   8,  true, UserPage, U64Type,      U64Decode, {  6,0 }, { 0,0 }, "ConsoleSessionForegroundProcessId" },
-    { 0x0340,   8,  true, UserPage, U64Type,      U64Decode, {  6,2 }, { 6,2 }, "TimeUpdateSequence" },
-    { 0x0340,   8,  true, UserPage, U64Type,      U64Decode, {  6,3 }, { 0,0 }, "TimeUpdateLock" },
-    { 0x0348,   8,  true, UserPage, U64Type,      U64Decode, {  6,2 }, { 0,0 }, "BaselineSystemTimeQpc" },
-    { 0x0350,   8,  true, UserPage, U64Type,      U64Decode, {  6,2 }, { 0,0 }, "BaselineInterruptTimeQpc" },
-    { 0x0358,   8,  true, UserPage, U64Type,     SystemTime, {  6,2 }, { 0,0 }, "QpcSystemTimeIncrement" },
-    { 0x0360,   8, false, UserPage, U64Type,     SystemTime, {  6,2 }, { 0,0 }, "QpcInterruptTimeIncrement" },
-    { 0x0368,   4,  true, UserPage, U32Type,      U32Decode, {  6,2 }, { 6,3 }, "QpcSystemTimeIncrement32" },
-    { 0x0368,   1,  true, UserPage,  U8Type,       U8Decode, { 10,0 }, { 0,0 }, "QpcSystemTimeIncrementShift" },
-    { 0x0369,   1,  true, UserPage,  U8Type,       U8Decode, { 10,0 }, { 0,0 }, "QpcInterruptTimeIncrementShift" },
-    { 0x036A,   2,  true, UserPage, U16Type,      U16Decode, { 10,0 }, { 0,0 }, "UnparkedProcessorCount" },
-    { 0x036C,   4,  true, UserPage, U32Type,      U32Decode, {  6,2 }, { 6,3 }, "QpcInterruptTimeIncrement32" },
-    { 0x036C,  16, false, UserPage, U32Type,  EnclaveDecode, { 10,1 }, { 0,0 }, "EnclaveFeatureMask" },
-    { 0x0370,   1,  true, UserPage,  U8Type,       U8Decode, {  6,2 }, { 6,3 }, "QpcSystemTimeIncrementShift" },
-    { 0x0371,   1,  true, UserPage,  U8Type,       U8Decode, {  6,2 }, { 6,3 }, "QpcInterruptTimeIncrementShift" },
-    { 0x037C,   4,  true, UserPage, U32Type,      U32Decode, { 10,4 }, { 0,0 }, "TelemetryCoverageRound" },
-    { 0x0380,  16, false, UserPage, U16Type,       NoDecode, {  6,0 }, { 6,0 }, "UserModeGlobalLogger" },
-    { 0x0380,  32, false, UserPage, U16Type,       NoDecode, {  6,1 }, { 0,0 }, "UserModeGlobalLogger" },
-    { 0x0390,   8,  true, UserPage, U32Type,       NoDecode, {  6,0 }, { 6,0 }, "HeapTracingPid" },
-    { 0x0398,   8,  true, UserPage, U32Type,       NoDecode, {  6,0 }, { 6,0 }, "CritSecTracingPid" },
-    { 0x03A0,   4,  true, UserPage, U32Type,       NoDecode, {  6,0 }, { 0,0 }, "ImageFileExecutionOptions" }, // bit 0: app verifier is globally enabled?
-    { 0x03A4,   4,  true, UserPage, U32Type,      U32Decode, {  6,1 }, { 0,0 }, "LangGenerationCount" },
-    { 0x03A8,   4,  true, UserPage, U32Type,      U32Decode, {  6,0 }, { 6,0 }, "ActiveProcessorAffinity" },
-    { 0x03B0,   8,  true, UserPage, U64Type,     SystemTime, {  6,0 }, { 0,0 }, "InterruptTimeBias" }, // ??
-    { 0x03B8,   8,  true, UserPage, U64Type,     SystemTime, {  6,1 }, { 6,2 }, "TscQpcBias" },
-    { 0x03B8,   8,  true, UserPage, U64Type,     SystemTime, {  6,3 }, { 0,0 }, "QpcBias" },
-    { 0x03C0,   4,  true, UserPage, U32Type,      U32Decode, {  6,1 }, { 0,0 }, "ActiveProcessorCount" },
-    { 0x03C4,   2,  true, UserPage, U16Type,      U16Decode, {  6,1 }, { 0,0 }, "ActiveGroupCount" },
-    { 0x03C6,   2,  true, UserPage,  U8Type,       NoDecode, {  6,2 }, { 6,2 }, "TscQpcData" },
-    { 0x03C6,   2,  true, UserPage,  U8Type,       NoDecode, {  6,3 }, { 0,0 }, "QpcData" },
-    { 0x03C8,   4,  true, UserPage, U32Type,      U32Decode, {  6,1 }, { 6,1 }, "AitSamplingValue" },
-    { 0x03CC,   4, false, UserPage, U32Type,       NoDecode, {  6,1 }, { 6,1 }, "AppCompatFlag" },
-    { 0x03D0,   8, false, UserPage, U64Type,       NoDecode, {  6,1 }, { 6,1 }, "SystemDllNativeRelocation" },
-    { 0x03D8,   4, false, UserPage, U32Type,       NoDecode, {  6,1 }, { 6,1 }, "SystemDllWowRelocation" },
-    { 0x03C8,   8,  true, UserPage, U64Type,     SystemTime, {  6,2 }, { 0,0 }, "TimeZoneBiasEffectiveStart" },
-    { 0x03D0,   8,  true, UserPage, U64Type,     SystemTime, {  6,2 }, { 0,0 }, "TimeZoneBiasEffectiveEnd" },
-    { 0x03E0, 528,  true, UserPage, U32Type,       NoDecode, {  6,1 }, { 6,1 }, "XState" },
-    { 0x03D8, 840,  true, UserPage, U32Type,       NoDecode, {  6,2 }, { 0,0 }, "XState" },
-    { 0x0710,  16, false, UserPage,  U8Type,       NoDecode, { 10,0 }, {10,15}, "FeatureConfigurationChangeStamp" },
-    { 0x0720,  16, false, UserPage,  U8Type,       NoDecode, { 11,0 }, { 0,0 }, "FeatureConfigurationChangeStamp" },
-    { 0x0730,   8, false, UserPage, U64Type,       NoDecode, { 11,0 }, { 0,0 }, "UserPointerAuthMask" },
-    //{ 0x0738,   8, false, KUserPage, U64Type,       NoDecode, { 11,0 }, { 0,0 }, "XStateArm64" },
+    { 0x0000,   4,  true, false, UserPage, U32Type,      U32Decode, {  3,5 }, { 5,1 }, "TickCountLow" },
+    { 0x0004,   4, false, false, UserPage, U32Type, TickMultiplier, {  3,5 }, { 0,0 }, "TickCountMultiplier" },
+    { 0x0008,  12,  true, false, UserPage, U32Type,      U64Decode, {  3,5 }, { 5,2 }, "InterruptTime" },
+    { 0x0008,  12,  true, false, UserPage, U32Type,     SystemTime, {  6,0 }, { 0,0 }, "InterruptTime" },
+    { 0x0014,  12,  true, false, UserPage, U32Type,     SystemTime, {  3,5 }, { 0,0 }, "SystemTime" },
+    { 0x0020,  12,  true, false, UserPage, U32Type,     SystemTime, {  3,5 }, { 0,0 }, "TimeZoneBias" },
+    { 0x002C,   4, false, false, UserPage, U16Type,    ImageNumber, {  3,5 }, { 0,0 }, "ImageNumber" },
+    { 0x0030, 520, false, false, UserPage, U16Type,   StringDecode, {  3,5 }, { 0,0 }, "NtSystemRoot" },
+    { 0x0238,   4, false, false, UserPage, U32Type,  DiskMapDecode, {  4,0 }, { 4,0 }, "DosDeviceMap" }, // each bit is DOS disk letter
+    { 0x0238,   4, false, false, UserPage, U32Type,      U32Decode, {  5,0 }, { 0,0 }, "MaxStackTraceDepth" },
+    { 0x023C,   4, false, false, UserPage, U32Type,      U32Decode, {  4,0 }, { 0,0 }, "CryptoExponent" },
+    { 0x0240,   4,  true, false, UserPage, U32Type,     TimeZoneId, {  4,0 }, { 0,0 }, "TimeZoneId" },
+    { 0x0244,  20, false, false, UserPage,  U8Type, DiskTypeDecode, {  4,0 }, { 4,0 }, "DosDeviceDriveType" },
+    { 0x0244,   4, false, false, UserPage, U32Type,      U32Decode, {  5,2 }, { 0,0 }, "LargePageMinimum" },
+    { 0x0248,   4,  true, false, UserPage, U32Type,      U32Decode, {  6,2 }, { 0,0 }, "AitSamplingValue" }, // App Impact Telemetry
+    { 0x024C,   4, false, false, UserPage, U32Type,       NoDecode, {  6,2 }, { 0,0 }, "AppCompatFlag" },
+    { 0x0250,   8,  true, false, UserPage, U64Type,      U64Decode, {  6,2 }, { 0,0 }, "RNGSeedVersion" },
+    { 0x0258,   4, false, false, UserPage, U32Type,      U32Decode, {  6,2 }, { 0,0 }, "GlobalValidationRunLevel" },
+    { 0x025C,   4,  true, false, UserPage, U32Type,      U32Decode, {  6,2 }, { 0,0 }, "TimeZoneBiasStamp" },
+    { 0x0260,   4, false, false, UserPage, U32Type,      U32Decode, { 10,0 }, { 0,0 }, "NtBuildNumber" },
+    { 0x0264,   4, false, false, UserPage, U32Type,  NtProductType, {  4,0 }, { 0,0 }, "NtProductType" },
+    { 0x0268,   1, false, false, UserPage,  NoType,     BoolDecode, {  4,0 }, { 0,0 }, "ProductTypeIsValid" }, // 0 on install or when updating
+    { 0x026A,   2, false, false, UserPage, U16Type, NativeProcArch, {  6,2 }, { 0,0 }, "NativeProcessorArchitecture" },
+    { 0x026C,   4, false, false, UserPage, U32Type,      U32Decode, {  4,0 }, { 0,0 }, "NtMajorVersion" },
+    { 0x0270,   4, false, false, UserPage, U32Type,      U32Decode, {  4,0 }, { 0,0 }, "NtMinorVersion" },
+    { 0x0274,  64, false, false, UserPage,  NoType,   ProcFeatures, {  4,0 }, { 0,0 }, "ProcessorFeatures" },
+    { 0x02B4,   4, false, false, UserPage, U32Type,       NoDecode, {  4,0 }, { 0,0 }, "MmHighestUserAddressDeprecated" },
+    { 0x02B8,   4, false, false, UserPage, U32Type,       NoDecode, {  4,0 }, { 0,0 }, "MmSystemRangeStartDeprecated" },
+    { 0x02BC,   4,  true, false, UserPage, U32Type,      U32Decode, {  5,0 }, { 0,0 }, "TimeSlipDebugging" },
+    { 0x02C0,   4, false, false, UserPage, U32Type,        AltArch, {  5,0 }, { 0,0 }, "AlternativeArchitecture" },
+    { 0x02C4,   4, false, false, UserPage, U32Type,      U32Decode, { 10,0 }, { 0,0 }, "BootId" },
+    { 0x02C8,   8, false, false, UserPage, U64Type,     SystemTime, {  5,0 }, { 0,0 }, "SystemExpirationDate" },
+    { 0x02D0,   4, false, false, UserPage, U32Type,      SuiteMask, {  4,0 }, { 0,0 }, "SuiteMask" },
+    { 0x02D4,   1,  true, false, UserPage,  NoType,  KdDebugDecode, {  5,0 }, { 0,0 }, "KdDebuggerEnabled" },
+    { 0x02D5,   1, false, false, UserPage,  NoType,  MitigationPol, {  5,1 }, { 0,0 }, "MitigationPolicies" },
+    { 0x02D6,   2, false, false, UserPage, U16Type,      U16Decode, { 10,7 }, { 0,0 }, "CyclesPerYield" },
+    { 0x02D8,   4,  true, false, UserPage, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "ActiveConsoleId" }, // TODO: can be -1 for Windows Sandbox
+    { 0x02DC,   4,  true, false, UserPage, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "DismountCount" },
+    { 0x02E0,   4,  true, false, UserPage, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "ComPlusPackage" },
+    { 0x02E4,   4,  true, false, UserPage, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "LastSystemRITEventTickCount" }, // updates every second as long as some users provide input
+    { 0x02E8,   4,  true, false, UserPage, U32Type,      U32Decode, {  5,1 }, { 0,0 }, "NumberOfPhysicalPages" },
+    { 0x02EC,   1, false, false, UserPage,  NoType,     BoolDecode, {  5,1 }, { 0,0 }, "SafeBootMode" },
+    { 0x02ED,   1,  true, false, UserPage,  NoType,       NoDecode, {  6,1 }, { 6,1 }, "TscQpcData" },
+    { 0x02ED,   1, false, false, UserPage,  NoType, VirtFlagDecode, { 10,2 }, { 0,0 }, "VirtualizationFlags" },
+    { 0x02F0,   4, false, false, UserPage, U32Type,       NoDecode, {  5,1 }, { 5,2 }, "TraceLogging" },
+    { 0x02F0,   4,  true, false, UserPage, U32Type,SharedDataFlags, {  6,0 }, { 0,0 }, "SharedDataFlags" },
+    { 0x02F8,   8, false, false, UserPage, U64Type,       NoDecode, {  5,1 }, { 0,0 }, "TestRetInstruction" },
+    { 0x0300,   4, false, false, UserPage, U32Type,       NoDecode, {  5,1 }, { 6,1 }, "SystemCall" },
+    { 0x0304,   4, false, false, UserPage, U32Type,       NoDecode, {  5,1 }, { 6,1 }, "SystemCallReturn" },
+    { 0x0300,   8, false, false, UserPage, U64Type,      U64Decode, {  6,2 }, { 0,0 }, "QpcFrequency" },
+    { 0x0308,   4, false, false, UserPage, U32Type,  SysCallDecode, { 10,1 }, { 0,0 }, "SystemCall" },
+    { 0x030C,   4, false, false, UserPage, U32Type,       NoDecode, { 10,9 }, { 0,0 }, "UserCetAvailableEnvironments" },
+    { 0x0310,   8,  true, false, UserPage, U64Type,      U64Decode, { 11,3 }, { 0,0 }, "FullNumberOfPhysicalPages" },
+    { 0x0320,   8,  true, false, UserPage, U64Type,      U64Decode, {  5,1 }, { 0,0 }, "TickCount" },
+    { 0x0330,   4, false, false, UserPage, U32Type,       NoDecode, {  5,1 }, { 0,0 }, "Cookie" },
+    { 0x0334,  64, false, false, UserPage, U32Type,      U32Decode, {  5,1 }, { 6,1 }, "Wow64SharedInformation" },
+    { 0x0338,   8,  true, false, UserPage, U64Type,      U64Decode, {  6,0 }, { 0,0 }, "ConsoleSessionForegroundProcessId" },
+    { 0x0340,   8,  true, false, UserPage, U64Type,      U64Decode, {  6,2 }, { 6,2 }, "TimeUpdateSequence" },
+    { 0x0340,   8,  true, false, UserPage, U64Type,      U64Decode, {  6,3 }, { 0,0 }, "TimeUpdateLock" },
+    { 0x0348,   8,  true, false, UserPage, U64Type,      U64Decode, {  6,2 }, { 0,0 }, "BaselineSystemTimeQpc" },
+    { 0x0350,   8,  true, false, UserPage, U64Type,      U64Decode, {  6,2 }, { 0,0 }, "BaselineInterruptTimeQpc" },
+    { 0x0358,   8,  true, false, UserPage, U64Type,     SystemTime, {  6,2 }, { 0,0 }, "QpcSystemTimeIncrement" },
+    { 0x0360,   8, false, false, UserPage, U64Type,     SystemTime, {  6,2 }, { 0,0 }, "QpcInterruptTimeIncrement" },
+    { 0x0368,   4,  true, false, UserPage, U32Type,      U32Decode, {  6,2 }, { 6,3 }, "QpcSystemTimeIncrement32" },
+    { 0x0368,   1,  true, false, UserPage,  U8Type,       U8Decode, { 10,0 }, { 0,0 }, "QpcSystemTimeIncrementShift" },
+    { 0x0369,   1,  true, false, UserPage,  U8Type,       U8Decode, { 10,0 }, { 0,0 }, "QpcInterruptTimeIncrementShift" },
+    { 0x036A,   2,  true, false, UserPage, U16Type,      U16Decode, { 10,0 }, { 0,0 }, "UnparkedProcessorCount" },
+    { 0x036C,   4,  true, false, UserPage, U32Type,      U32Decode, {  6,2 }, { 6,3 }, "QpcInterruptTimeIncrement32" },
+    { 0x036C,  16, false, false, UserPage, U32Type,  EnclaveDecode, { 10,1 }, { 0,0 }, "EnclaveFeatureMask" },
+    { 0x0370,   1,  true, false, UserPage,  U8Type,       U8Decode, {  6,2 }, { 6,3 }, "QpcSystemTimeIncrementShift" },
+    { 0x0371,   1,  true, false, UserPage,  U8Type,       U8Decode, {  6,2 }, { 6,3 }, "QpcInterruptTimeIncrementShift" },
+    { 0x037C,   4,  true, false, UserPage, U32Type,      U32Decode, { 10,4 }, { 0,0 }, "TelemetryCoverageRound" },
+    { 0x0380,  16, false, false, UserPage, U16Type,       NoDecode, {  6,0 }, { 6,0 }, "UserModeGlobalLogger" },
+    { 0x0380,  32, false, false, UserPage, U16Type,       NoDecode, {  6,1 }, { 0,0 }, "UserModeGlobalLogger" },
+    { 0x0390,   8,  true, false, UserPage, U32Type,       NoDecode, {  6,0 }, { 6,0 }, "HeapTracingPid" },
+    { 0x0398,   8,  true, false, UserPage, U32Type,       NoDecode, {  6,0 }, { 6,0 }, "CritSecTracingPid" },
+    { 0x03A0,   4,  true, false, UserPage, U32Type,       NoDecode, {  6,0 }, { 0,0 }, "ImageFileExecutionOptions" }, // bit 0: app verifier is globally enabled?
+    { 0x03A4,   4,  true, false, UserPage, U32Type,      U32Decode, {  6,1 }, { 0,0 }, "LangGenerationCount" },
+    { 0x03A8,   4,  true, false, UserPage, U32Type,      U32Decode, {  6,0 }, { 6,0 }, "ActiveProcessorAffinity" },
+    { 0x03B0,   8,  true, false, UserPage, U64Type,     SystemTime, {  6,0 }, { 0,0 }, "InterruptTimeBias" }, // ??
+    { 0x03B8,   8,  true, false, UserPage, U64Type,     SystemTime, {  6,1 }, { 6,2 }, "TscQpcBias" },
+    { 0x03B8,   8,  true, false, UserPage, U64Type,     SystemTime, {  6,3 }, { 0,0 }, "QpcBias" },
+    { 0x03C0,   4,  true, false, UserPage, U32Type,      U32Decode, {  6,1 }, { 0,0 }, "ActiveProcessorCount" },
+    { 0x03C4,   2,  true, false, UserPage, U16Type,      U16Decode, {  6,1 }, { 0,0 }, "ActiveGroupCount" },
+    { 0x03C6,   2,  true, false, UserPage,  U8Type,       NoDecode, {  6,2 }, { 6,2 }, "TscQpcData" },
+    { 0x03C6,   2,  true, false, UserPage,  U8Type,       NoDecode, {  6,3 }, { 0,0 }, "QpcData" },
+    { 0x03C8,   4,  true, false, UserPage, U32Type,      U32Decode, {  6,1 }, { 6,1 }, "AitSamplingValue" },
+    { 0x03CC,   4, false, false, UserPage, U32Type,       NoDecode, {  6,1 }, { 6,1 }, "AppCompatFlag" },
+    { 0x03D0,   8, false, false, UserPage, U64Type,       NoDecode, {  6,1 }, { 6,1 }, "SystemDllNativeRelocation" },
+    { 0x03D8,   4, false, false, UserPage, U32Type,       NoDecode, {  6,1 }, { 6,1 }, "SystemDllWowRelocation" },
+    { 0x03C8,   8,  true, false, UserPage, U64Type,     SystemTime, {  6,2 }, { 0,0 }, "TimeZoneBiasEffectiveStart" },
+    { 0x03D0,   8,  true, false, UserPage, U64Type,     SystemTime, {  6,2 }, { 0,0 }, "TimeZoneBiasEffectiveEnd" },
 
-    { 0x0000,   4,  true, HyperPage, U32Type,      U32Decode, { 10,5 }, { 0,0 }, "Hypervisor TimeUpdateLock" },
-    { 0x0008,   8,  true, HyperPage, U64Type,      U64Decode, { 10,5 }, { 0,0 }, "Hypervisor QpcMultiplier" },
-    { 0x0010,   8,  true, HyperPage, U64Type,     SystemTime, { 10,5 }, { 0,0 }, "Hypervisor QpcBias" },
+    { 0x03E0, 528,  true, false, UserPage, U64Type,   XStateDecode, {  6,1 }, { 6,1 }, "XState" },
 
-    // { 0x0000, 624,  true, SiloPage,  U8Type,       NoDecode, { 10,2 }, { 0,0 }, "Silo" },
-    { 0x0000,   4, false, SiloPage, U32Type,      U32Decode, { 10,2 }, { 0,0 }, "Silo ServiceSessionId" },
-    { 0x0004,   4,  true, SiloPage, U32Type,      U32Decode, { 10,2 }, { 0,0 }, "Silo ActiveConsoleId" },
-    { 0x0008,   8,  true, SiloPage, U64Type,      U64Decode, { 10,2 }, { 0,0 }, "Silo ConsoleSessionForegroundProcessId" },
-    { 0x0010,   4, false, SiloPage, U32Type,  NtProductType, { 10,2 }, { 0,0 }, "Silo NtProductType" },
-    { 0x0014,   4, false, SiloPage, U32Type,      SuiteMask, { 10,2 }, { 0,0 }, "Silo SuiteMask" },
-    { 0x0018,   4, false, SiloPage, U32Type,      U32Decode, { 10,3 }, { 0,0 }, "Silo SharedUserSessionId" },
-    { 0x001C,   1, false, SiloPage,  NoType,     BoolDecode, { 10,3 }, { 0,0 }, "Silo IsMultiSessionSku" },
-    { 0x001D,   1, false, SiloPage,  NoType,     BoolDecode, { 10,3 }, { 0,0 }, "Silo IsStateSeparationEnabled" },
-    { 0x001E, 520, false, SiloPage, U16Type,   StringDecode, { 10,3 }, { 0,0 }, "Silo NtSystemRoot" },
-    { 0x0226,  32, false, SiloPage, U16Type,       NoDecode, { 10,3 }, { 0,0 }, "Silo UserModeGlobalLogger" },
-    { 0x0248,   4, false, SiloPage, U32Type,     TimeZoneId, { 10,12 }, { 0,0 }, "Silo TimeZoneId" },
-    { 0x024C,   4, false, SiloPage, U32Type,      U32Decode, { 10,12 }, { 0,0 }, "Silo TimeZoneBiasStamp" },
-    { 0x0250,  12,  true, SiloPage, U32Type,     SystemTime, { 10,12 }, { 0,0 }, "Silo TimeZoneBias" },
-    { 0x0260,   8,  true, SiloPage, U64Type,     SystemTime, { 10,12 }, { 0,0 }, "Silo TimeZoneBiasEffectiveStart" },
-    { 0x0268,   8,  true, SiloPage, U64Type,     SystemTime, { 10,12 }, { 0,0 }, "Silo TimeZoneBiasEffectiveEnd" },
+    { XSTATE_X86 + 0x0000, 856,  true, false, UserPage, U64Type,   XStateDecode, {  6,2 }, { 0,0 }, "XState" }, // XSTATE_CONFIGURATION
+    { XSTATE_X86 + 0x0008,   8,  true, false, UserPage, U64Type,   XStateDecode, {  6,1 }, { 0,0 }, "XState.EnabledVolatileFeatures" },
+    { XSTATE_X86 + 0x0010,   4,  true, false, UserPage, U32Type,      U32Decode, {  6,1 }, { 0,0 }, "XState.Size" },
+    { XSTATE_X86 + 0x0014,   4,  true, false, UserPage, U32Type, XStateCfDecode, {  6,1 }, { 0,0 }, "XState.ControlFlags" }, // last in Win8
+    { XSTATE_X86 + 0x0018,   8,  true, false, UserPage, U32Type,  U32PairDecode, { 10,0 }, { 0,0 }, "XState.Feature[x87]" },
+    { XSTATE_X86 + 0x0020,   8,  true, false, UserPage, U32Type,  U32PairDecode, { 10,0 }, { 0,0 }, "XState.Feature[SSE]" },
+    { XSTATE_X86 + 0x0028,   8,  true, false, UserPage, U32Type,  U32PairDecode, { 10,0 }, { 0,0 }, "XState.Feature[AVX]" },
+    { XSTATE_X86 + 0x0030,   8,  true, false, UserPage, U32Type,  U32PairDecode, { 10,0 }, { 0,0 }, "XState.Feature[MPX].regs" },
+    { XSTATE_X86 + 0x0038,   8,  true, false, UserPage, U32Type,  U32PairDecode, { 10,0 }, { 0,0 }, "XState.Feature[MPX].CSR" },
+    { XSTATE_X86 + 0x0040,   8,  true, false, UserPage, U32Type,  U32PairDecode, { 10,0 }, { 0,0 }, "XState.Feature[AVX512].KMASK" },
+    { XSTATE_X86 + 0x0048,   8,  true, false, UserPage, U32Type,  U32PairDecode, { 10,0 }, { 0,0 }, "XState.Feature[AVX512].ZMM_H" },
+    { XSTATE_X86 + 0x0050,   8,  true, false, UserPage, U32Type,  U32PairDecode, { 10,0 }, { 0,0 }, "XState.Feature[AVX512].ZMM" },
+    { XSTATE_X86 + 0x0058,   8,  true, false, UserPage, U32Type,  U32PairDecode, { 10,0 }, { 0,0 }, "XState.Feature[IPT]" },
+    { XSTATE_X86 + 0x0068,   8,  true, false, UserPage, U32Type,  U32PairDecode, { 10,0 }, { 0,0 }, "XState.Feature[PASID]" },
+    { XSTATE_X86 + 0x0070,   8,  true, false, UserPage, U32Type,  U32PairDecode, { 10,0 }, { 0,0 }, "XState.Feature[CET_U]" },
+    // { XSTATE_X86 + 0x0078,   8,  true, false, UserPage, U32Type,  U32PairDecode, { 10,0 }, { 0,0 }, "XState.Feature[CET_S]" }, // cannot be used by NT apparently
+    { XSTATE_X86 + 0x00A0,   8,  true, false, UserPage, U32Type,  U32PairDecode, { 10,0 }, { 0,0 }, "XState.Feature[AMX].cfg" },
+    { XSTATE_X86 + 0x00A8,   8,  true, false, UserPage, U32Type,  U32PairDecode, { 10,0 }, { 0,0 }, "XState.Feature[AMX].data" },
+    { XSTATE_X86 + 0x00B0,   8,  true, false, UserPage, U32Type,  U32PairDecode, { 10,0 }, { 0,0 }, "XState.Feature[AMX].data" },
+    { XSTATE_X86 + 0x0208,   8,  true, false, UserPage, U32Type,  U32PairDecode, { 10,0 }, { 0,0 }, "XState.Feature[LWP]" },
+    { XSTATE_X86 + 0x0218,   8,  true, false, UserPage, U64Type,   XStateDecode, { 10,0 }, { 0,0 }, "XState.SupervisorFeatures" },
+    { XSTATE_X86 + 0x0220,   8,  true, false, UserPage, U64Type,   XStateDecode, { 10,0 }, { 0,0 }, "XState.AlignedFeatures" },
+    { XSTATE_X86 + 0x0228,   4,  true, false, UserPage, U32Type,      U32Decode, { 10,0 }, { 0,0 }, "XState.AllFeatureSize" },
+    { XSTATE_X86 + 0x0330,   8,  true, false, UserPage, U64Type,   XStateDecode, { 10,6 }, { 0,0 }, "XState.UserModeFeatures" }, // EnabledUserVisibleSupervisorFeatures, Win10 1809+
+    { XSTATE_X86 + 0x0338,   8,  true, false, UserPage, U64Type,   XStateDecode, { 10,12}, { 0,0 }, "XState.ExtendedFeatureDisable" }, // documented as Server 2022 but present in LTSC 2021
+    { XSTATE_X86 + 0x0340,   4,  true, false, UserPage, U32Type,      U32Decode, { 10,14}, { 0,0 }, "XState.AllNonLargeFeatureSize" },
+    
+    { 0x0730,   8,  true, false, UserPage, U64Type,      U64Decode, { 11,0 }, { 0,0 }, "UserPointerAuthMask" },
+
+    { XSTATE_ARM + 0x0000, 856,  true,  true, UserPage, U64Type, XStateArmDecode, { 11,0 }, { 0,0 }, "XStateArm64" },
+    { XSTATE_ARM + 0x0008,   8,  true,  true, UserPage, U64Type, XStateArmDecode, { 11,0 }, { 0,0 }, "XStateArm64.EnabledVolatileFeatures" },
+    { XSTATE_ARM + 0x0010,   4,  true,  true, UserPage, U32Type,       U32Decode, { 11,0 }, { 0,0 }, "XStateArm64.Size" },
+    { XSTATE_ARM + 0x0014,   4,  true,  true, UserPage, U32Type,  XStateCfDecode, { 11,0 }, { 0,0 }, "XStateArm64.ControlFlags" },
+    { XSTATE_ARM + 0x0028,   8,  true,  true, UserPage, U32Type,   U32PairDecode, { 11,3 }, { 0,0 }, "XStateArm64.Feature[SVE]" },
+    { XSTATE_ARM + 0x0030,   8,  true,  true, UserPage, U32Type,   U32PairDecode, { 11,6 }, { 0,0 }, "XStateArm64.Feature[SME].ZA" },
+    { XSTATE_ARM + 0x0038,   8,  true,  true, UserPage, U32Type,   U32PairDecode, { 11,6 }, { 0,0 }, "XStateArm64.Feature[SME].TPIDR2" },
+    { XSTATE_ARM + 0x0040,   8,  true,  true, UserPage, U32Type,   U32PairDecode, { 11,6 }, { 0,0 }, "XStateArm64.Feature[SME].ZT" },
+    { XSTATE_ARM + 0x0218,   8,  true,  true, UserPage, U64Type, XStateArmDecode, { 11,0 }, { 0,0 }, "XStateArm64.SupervisorFeatures" },
+    { XSTATE_ARM + 0x0220,   8,  true,  true, UserPage, U64Type, XStateArmDecode, { 11,0 }, { 0,0 }, "XStateArm64.AlignedFeatures" },
+    { XSTATE_ARM + 0x0228,   4,  true,  true, UserPage, U32Type,       U32Decode, { 11,0 }, { 0,0 }, "XStateArm64.AllFeatureSize" },
+    { XSTATE_ARM + 0x0330,   8,  true,  true, UserPage, U64Type, XStateArmDecode, { 11,0 }, { 0,0 }, "XStateArm64.UserModeFeatures" },
+    { XSTATE_ARM + 0x0338,   8,  true,  true, UserPage, U64Type, XStateArmDecode, { 11,0 }, { 0,0 }, "XStateArm64.ExtendedFeatureDisableFeatures" },
+    { XSTATE_ARM + 0x0340,   4,  true,  true, UserPage, U32Type,       U32Decode, { 11,0 }, { 0,0 }, "XStateArm64.AllNonLargeFeatureSize" },
+    { XSTATE_ARM + 0x0344,   2,  true,  true, UserPage, U16Type,       U16Decode, { 11,3 }, { 0,0 }, "XStateArm64.MaxSveVectorLength" },
+    { XSTATE_ARM + 0x0346,   2,  true,  true, UserPage, U16Type,       U16Decode, { 11,6 }, { 0,0 }, "XStateArm64.MaxSmeVectorLength" },
+    { XSTATE_ARM + 0x0348,   2,  true,  true, UserPage, U16Type,       U16Decode, { 11,6 }, { 0,0 }, "XStateArm64.SmeZTRegisterCount" },
+    { XSTATE_ARM + 0x034A,   2,  true,  true, UserPage, U16Type,  XStateAfDecode, { 11,6 }, { 0,0 }, "XStateArm64.Arm64Flags" },
+    { XSTATE_ARM + 0x034C,   1,  true,  true, UserPage,  U8Type,    SveLenDecode, { 11,6 }, { 0,0 }, "XStateArm64.SupportedSmeVectorLengths" },
+
+    { 0x0DE8,   8,  true, false, UserPage, U64Type,      SystemTime, { 11,0 }, { 0,0 }, "FeatureConfigurationChangeStamp" },
+
+    { 0x0000,   4,  true, false, HyperPage, U32Type,      U32Decode, { 10,5 }, { 0,0 }, "Hypervisor TimeUpdateLock" },
+    { 0x0008,   8,  true, false, HyperPage, U64Type,      U64Decode, { 10,5 }, { 0,0 }, "Hypervisor QpcMultiplier" },
+    { 0x0010,   8,  true, false, HyperPage, U64Type,     SystemTime, { 10,5 }, { 0,0 }, "Hypervisor QpcBias" },
+
+    { 0x0000,   4, false, false, SiloPage, U32Type,      U32Decode, { 10,2 }, { 0,0 }, "Silo ServiceSessionId" },
+    { 0x0004,   4,  true, false, SiloPage, U32Type,      U32Decode, { 10,2 }, { 0,0 }, "Silo ActiveConsoleId" },
+    { 0x0008,   8,  true, false, SiloPage, U64Type,      U64Decode, { 10,2 }, { 0,0 }, "Silo ConsoleSessionForegroundProcessId" },
+    { 0x0010,   4, false, false, SiloPage, U32Type,  NtProductType, { 10,2 }, { 0,0 }, "Silo NtProductType" },
+    { 0x0014,   4, false, false, SiloPage, U32Type,      SuiteMask, { 10,2 }, { 0,0 }, "Silo SuiteMask" },
+    { 0x0018,   4, false, false, SiloPage, U32Type,      U32Decode, { 10,3 }, { 0,0 }, "Silo SharedUserSessionId" },
+    { 0x001C,   1, false, false, SiloPage,  NoType,     BoolDecode, { 10,3 }, { 0,0 }, "Silo IsMultiSessionSku" },
+    { 0x001D,   1, false, false, SiloPage,  NoType,     BoolDecode, { 10,3 }, { 0,0 }, "Silo IsStateSeparationEnabled" },
+    { 0x001E, 520, false, false, SiloPage, U16Type,   StringDecode, { 10,3 }, { 0,0 }, "Silo NtSystemRoot" },
+    { 0x0226,  32, false, false, SiloPage, U16Type,       NoDecode, { 10,3 }, { 0,0 }, "Silo UserModeGlobalLogger" },
+    { 0x0248,   4, false, false, SiloPage, U32Type,     TimeZoneId, { 10,12 }, { 0,0 }, "Silo TimeZoneId" },
+    { 0x024C,   4, false, false, SiloPage, U32Type,      U32Decode, { 10,12 }, { 0,0 }, "Silo TimeZoneBiasStamp" },
+    { 0x0250,  12,  true, false, SiloPage, U32Type,     SystemTime, { 10,12 }, { 0,0 }, "Silo TimeZoneBias" },
+    { 0x0260,   8,  true, false, SiloPage, U64Type,     SystemTime, { 10,12 }, { 0,0 }, "Silo TimeZoneBiasEffectiveStart" },
+    { 0x0268,   8,  true, false, SiloPage, U64Type,     SystemTime, { 10,12 }, { 0,0 }, "Silo TimeZoneBiasEffectiveEnd" },
 };
 
 const std::uint8_t * silodata = nullptr;
@@ -457,6 +515,7 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
 
                     for (const auto & element : structure) {
                         bool display = false;
+                        bool emulated = false;
 
                         switch (wParam) {
                             case 0: display = (element.length <= 12u); break;
@@ -528,7 +587,7 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                     }
                                     _snwprintf (szTmpBuffer, 32768, result ? L"True" : L"False");
                                 } break;
-                                
+
                                 case U8Decode:
                                     _snwprintf (szTmpBuffer, 32768, L"%u", *reinterpret_cast <const std::uint8_t *> (address));
                                     break;
@@ -538,6 +597,12 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                 case U32Decode:
                                     _snwprintf (szTmpBuffer, 32768, L"%u", *reinterpret_cast <const std::uint32_t *> (address));
                                     break;
+                                case U32PairDecode:
+                                    _snwprintf (szTmpBuffer, 32768, L"%u : %u",
+                                                reinterpret_cast <const std::uint32_t *> (address) [0],
+                                                reinterpret_cast <const std::uint32_t *> (address) [1]);
+                                    break;
+
                                 case U64Decode:
                                     _snwprintf (szTmpBuffer, 32768, L"%llu", *reinterpret_cast <const std::uint64_t *> (address));
                                     break;
@@ -583,6 +648,31 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                         }
                                     } else {
                                         _snwprintf (szTmpBuffer, 32768, L"0");
+                                    }
+                                    break;
+
+                                case DiskMapDecode:
+                                    for (auto i = 0u; i != 'Z' - 'A' + 1; ++i) {
+                                        if (reinterpret_cast <const std::uint32_t *> (address) [0] & (1u << i)) {
+                                            _snwprintf (szTmpBuffer2, 32768, L"%c:\\", L'A' + i);
+                                            AppendTmp (szTmpBuffer2);
+                                        }
+                                    }
+                                    break;
+
+                                case DiskTypeDecode:
+                                    for (auto i = 0u; i != 'Z' - 'A' + 1; ++i) {
+                                        if (reinterpret_cast <const std::uint32_t *> (0x7FFE0238) [0] & (1u << i)) {
+
+                                            auto type = reinterpret_cast <const std::uint8_t *> (address) [i];
+                                            if (type <= 6) {
+                                                _snwprintf (szTmpBuffer2, 32768, L"%c: ", L'A' + i);
+                                                LoadString (NULL, 0x0020 + type, szTmpBuffer2 + 3, 32768 - 3);
+                                            } else {
+                                                _snwprintf (szTmpBuffer2, 32768, L"%c: unknown (%u)", L'A' + i, type);
+                                            }
+                                            AppendTmp (szTmpBuffer2);
+                                        }
                                     }
                                     break;
 
@@ -807,6 +897,62 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                     if (*reinterpret_cast <const std::uint8_t *> (address) & 0x01) AppendTmp (L"VMX/SVM Available");
                                     if (*reinterpret_cast <const std::uint8_t *> (address) & 0x02) AppendTmp (L"Locked");
                                     break;
+
+                                case XStateDecode:
+                                    if (auto value = *reinterpret_cast <const std::uint64_t *> (address)) {
+                                        if (value & XSTATE_MASK_LEGACY_FLOATING_POINT) AppendTmp (L"x87");
+                                        if (value & XSTATE_MASK_LEGACY_SSE) AppendTmp (L"SSE");
+                                        if (value & XSTATE_MASK_AVX) AppendTmp (L"AVX");
+                                        if (value & XSTATE_MASK_MPX) AppendTmp (L"MPX");
+                                        if (value & XSTATE_MASK_AVX512) AppendTmp (L"AVX512");
+                                        if (value & XSTATE_MASK_IPT) AppendTmp (L"IPT");
+                                        if (value & XSTATE_MASK_PASID) AppendTmp (L"PASID");
+                                        if (value & XSTATE_MASK_CET_U) AppendTmp (L"CET (user mode)");
+                                        if (value & XSTATE_MASK_CET_S) AppendTmp (L"CET (kernel)");
+                                        if (value & XSTATE_MASK_AMX_TILE_CONFIG) AppendTmp (L"AMX (config)");
+                                        if (value & XSTATE_MASK_AMX_TILE_DATA) AppendTmp (L"AMX (data)");
+                                        if (value & XSTATE_MASK_LWP) AppendTmp (L"LWP");
+
+                                        if (*reinterpret_cast <const std::uint16_t *> (0x7FFE'002C) == IMAGE_FILE_MACHINE_ARM64) {
+                                            emulated = true;
+                                        }
+                                    }
+                                    break;
+
+                                case XStateCfDecode:
+                                    if (auto value = *reinterpret_cast <const std::uint32_t *> (address)) {
+                                        if (value & 0x0000'0001u) AppendTmp (L"Optimized Save");
+                                        if (value & 0x0000'0002u) AppendTmp (L"Compaction Enabled");
+                                        if (value & 0x0000'0004u) AppendTmp (L"Extended Features Disabled");
+                                    }
+                                    break;
+
+                                case XStateArmDecode:
+                                    if (auto value = *reinterpret_cast <const std::uint64_t *> (address)) {
+                                        if (value & XSTATE_MASK_ARM64_SVE) AppendTmp (L"SVE");
+                                        if (value & XSTATE_MASK_ARM64_SME_ZA) AppendTmp (L"SME (ZA)");
+                                        if (value & XSTATE_MASK_ARM64_SME_TPIDR2) AppendTmp (L"SME (TPIDR2)");
+                                        if (value & XSTATE_MASK_ARM64_SME_ZT) AppendTmp (L"SME (ZT)");
+                                    }
+                                    break;
+
+                                case XStateAfDecode:
+                                    if (reinterpret_cast <const std::uint16_t *> (address) [0] & 0x0000'0001) AppendTmp (L"SME FA64");
+                                    break;
+
+                                case SveLenDecode:
+                                    for (auto bit = 0u; bit != 8u; ++bit) {
+                                        if (reinterpret_cast <const std::uint8_t *> (address) [0] & (1 << bit)) {
+                                            _snwprintf (szTmpBuffer2, 32768, L"%u-bit", 128u << bit);
+                                            AppendTmp (szTmpBuffer2);
+                                        }
+                                    }
+                                    break;
+                            }
+
+                            if (emulated) {
+                                LoadString (NULL, 0x0011, szTmpBuffer2, 32768);
+                                wcscat (szTmpBuffer, szTmpBuffer2);
                             }
 
                             ListViewCtrl_SetItemText (hWnd, 1, item, 6);
@@ -893,7 +1039,10 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                             return CDRF_NOTIFYITEMDRAW;
 
                         case CDDS_ITEMPREPAINT:
-                            if (structure [index].minver <= os && (os <= structure [index].maxver || structure [index].maxver.byte == 0)) {
+                            if (structure [index].minver <= os
+                                    && (os <= structure [index].maxver || structure [index].maxver.byte == 0)
+                                    && (!structure [index].arm64 || (*reinterpret_cast <const std::uint16_t *> (0x7FFE'002C) == IMAGE_FILE_MACHINE_ARM64))
+                                ) {
                                 switch (structure [index].page) {
                                     case SiloPage:
                                         lplvcd->clrText = 0xAA00AA;
@@ -902,7 +1051,11 @@ LRESULT CALLBACK WindowProcedure (_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM
                                         lplvcd->clrText = 0xCC4400;
                                         break;
                                     default:
-                                        lplvcd->clrText = GetSysColor (COLOR_WINDOWTEXT);
+                                        if (structure [index].arm64) {
+                                            lplvcd->clrText = 0x008800;
+                                        } else {
+                                            lplvcd->clrText = GetSysColor (COLOR_WINDOWTEXT);
+                                        }
                                 }
                             } else {
                                 lplvcd->clrText = 0xAAAAAA;
@@ -974,8 +1127,9 @@ int APIENTRY wWinMain (_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int
             if (build >= 22631) os.minor = 2;
             if (build >= 26100) os.minor = 3;
             if (build >= 26200) os.minor = 4;
-            //if (build >= 28000) os.minor = 5;
-            //if (build >= 26300) os.minor = 6;
+            if (build >= 26300) os.minor = 5;
+            if (build >= 28000) os.minor = 6;
+            if (build >= 29500) os.minor = 7;
         } else {
             if (build >= 10586) os.minor = 1;
             if (build >= 14393) os.minor = 2;
